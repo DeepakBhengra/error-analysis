@@ -10,3 +10,9 @@ venv/
 results/
 *.json
 !tests/fixtures/*.json
+# Web UI build/config manifests must be tracked (Vite/TypeScript)
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+!web/tsconfig.app.json
+!web/tsconfig.node.json
