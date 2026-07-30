@@ -1,0 +1,20 @@
+{
+  "log_id": "test-log-id",
+  "timestamp": "2026-07-15T11:58:53.241Z",
+  "host": "uschileai2501",
+  "service": "OrderCreate_v2",
+  "env": "",
+  "search_text": "DEEPAKDDTEST2",
+  "request": {
+    "ordercreaterequest": {
+      "requestpreamble": {
+        "isocountrycode": "US",
+        "customernumber": "60-006843"
+      },
+      "ordercreatedetails": {
+        "customerponumber": "DEEPAKDDTEST2",
+        "lines": []
+      }
+    }
+  }
+}

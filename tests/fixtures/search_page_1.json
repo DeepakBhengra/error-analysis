@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": "log-1",
+      "type": "log",
+      "attributes": {
+        "service": "svc-a",
+        "timestamp": "2026-07-08T10:00:00Z",
+        "attributes": {
+          "RequestLogPayload": {"requestId": "G0D82"}
+        }
+      }
+    }
+  ],
+  "meta": {
+    "page": {
+      "after": "cursor-page-2"
+    }
+  }
+}

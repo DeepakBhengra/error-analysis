@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "id": "log-2",
+      "type": "log",
+      "attributes": {
+        "service": "svc-b",
+        "timestamp": "2026-07-08T10:01:00Z",
+        "attributes": {
+          "RequestLogPayload": {"requestId": "G0D83"}
+        }
+      }
+    }
+  ],
+  "meta": {
+    "page": {}
+  }
+}

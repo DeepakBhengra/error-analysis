@@ -1,0 +1,82 @@
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from error_analysis.env_file import env_file_path
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    dd_api_key: str = Field(..., alias="DD_API_KEY")
+    dd_app_key: str = Field(..., alias="DD_APP_KEY")
+    dd_site: str = Field(default="us5.datadoghq.com", alias="DD_SITE")
+
+    default_query: str = Field(default='"G0D82"', alias="DEFAULT_QUERY")
+    default_storage_tier: str = Field(default="indexes", alias="DEFAULT_STORAGE_TIER")
+    default_sort: str = Field(default="-timestamp", alias="DEFAULT_SORT")
+    default_page_limit: int = Field(default=50, alias="DEFAULT_PAGE_LIMIT")
+    checkout_service: str = Field(
+        default="AsyncOrderCreate,OrderCreate_v6*,OrderCreate_v2*",
+        alias="CHECKOUT_SERVICE",
+    )
+    order_create_services: str = Field(
+        default="AsyncOrderCreate,OrderCreate_v6*,OrderCreate_v2*",
+        alias="ORDER_CREATE_SERVICES",
+    )
+    async_order_hosts: str = Field(
+        default="uschileai1401,uschileai1402,uschileai1403,uschileai1404",
+        alias="ASYNC_ORDER_HOSTS",
+    )
+
+    order_create_username: str = Field(default="", alias="ORDER_CREATE_USERNAME")
+    order_create_password: str = Field(default="", alias="ORDER_CREATE_PASSWORD")
+    order_create_cookie: str = Field(default="", alias="ORDER_CREATE_COOKIE")
+
+    default_order_create_target: str = Field(default="uat", alias="DEFAULT_ORDER_CREATE_TARGET")
+    default_replay_mode: str = Field(default="one_up", alias="DEFAULT_REPLAY_MODE")
+
+    # Inbound API key for POST /api/v1/order-curl (never expose in responses).
+    order_curl_api_key: str = Field(default="", alias="ORDER_CURL_API_KEY")
+
+    lookup_api_url: str = Field(
+        default="http://127.0.0.1:8000/api/v1/lookup",
+        alias="LOOKUP_API_URL",
+    )
+    lookup_api_key: str = Field(default="cobolilapp", alias="LOOKUP_API_KEY")
+    lookup_application_key: str = Field(
+        default="deepakcobolil88206",
+        alias="LOOKUP_APPLICATION_KEY",
+    )
+    lookup_source_root: str = Field(
+        default="C:/Legacy-Error-Code-Mapper-ver1/samples",
+        alias="LOOKUP_SOURCE_ROOT",
+    )
+    lookup_rules_path: str = Field(
+        default="C:/Legacy-Error-Code-Mapper-ver1/config/error_rules.json",
+        alias="LOOKUP_RULES_PATH",
+    )
+    lookup_corora_mappings: str = Field(
+        default="C:/Legacy-Error-Code-Mapper-ver1/error_mapping_files",
+        alias="LOOKUP_CORORA_MAPPINGS",
+    )
+
+    @property
+    def default_services(self) -> list[str]:
+        raw = self.order_create_services or self.checkout_service
+        return [part.strip() for part in raw.split(",") if part.strip()]
+
+    @property
+    def default_async_order_hosts(self) -> list[str]:
+        return [part.strip() for part in self.async_order_hosts.split(",") if part.strip()]
+
+    @property
+    def api_base_url(self) -> str:
+        site = self.dd_site.removeprefix("https://").removeprefix("http://").rstrip("/")
+        return f"https://api.{site}/"
+
+
+def get_settings() -> Settings:
+    return Settings(_env_file=env_file_path())

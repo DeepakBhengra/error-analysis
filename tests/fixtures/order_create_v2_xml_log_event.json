@@ -1,0 +1,9 @@
+{
+  "id": "xml-v2-1",
+  "attributes": {
+    "timestamp": "2026-07-15T14:10:54.336Z",
+    "host": "uschileai2501",
+    "service": "OrderCreate_v2",
+    "message": "OrderCreate_v2_0 - Request: StartNewTransactionLog <pfx5:LogPayload><pfx5:ServiceName>OrderCreate_v2_0</pfx5:ServiceName><pfx5:CountryCode>US</pfx5:CountryCode>\"RequestLogPayload\":{\"ordercreaterequest\":{\"requestpreamble\":{\"isocountrycode\":\"US\",\"customernumber\":\"20-222222\"},\"ordercreatedetails\":{\"customerponumber\":\"DELLWWEEDEEP132\"}}}</pfx5:LogPayload>"
+  }
+}

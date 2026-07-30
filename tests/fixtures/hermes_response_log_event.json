@@ -1,0 +1,10 @@
+{
+  "id": "hermes-response-1",
+  "type": "log",
+  "attributes": {
+    "host": "im-uat-cep-us1.ingrammicro.com",
+    "service": "checkout.webapi.checkoutprocess",
+    "timestamp": "2026-07-08T10:00:01.123Z",
+    "message": "Error in Hermes Order Simulate: Response :{\"ResponseLogPayload\":{\"status\":\"OK\",\"orderNumber\":\"44-12345\"}}"
+  }
+}

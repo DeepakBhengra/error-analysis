@@ -1,0 +1,10 @@
+{
+  "id": "hermes-log-1",
+  "type": "log",
+  "attributes": {
+    "host": "im-uat-cep-us1.ingrammicro.com",
+    "service": "checkout.webapi.checkoutprocess",
+    "timestamp": "2026-07-08T10:00:00.123Z",
+    "message": "Error in Hermes Order Simulate: Request :{\"servicerequest\":{\"orderquoterequest\":{\"billtoaddress\":null,\"getcarrierlist\":\"true\",\"lines\":[{\"linenumber\":\"001\",\"globalskuid\":\"A310-7140LHU\",\"quantity\":\"10\",\"unitprice\":3512.5}]}}}"
+  }
+}
