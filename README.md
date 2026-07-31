@@ -18,26 +18,87 @@ Entry points:
 
 For module-level detail, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## Setup
+## Prerequisites
 
-1. Create a virtual environment and install:
+Install these on your machine before cloning:
+
+- **Git**
+- **Python 3.10+** (`python` or `python3` on PATH; on Windows the `py` launcher also works)
+- **Node.js 18+** and **npm** (for the React UI)
+- A code editor with a terminal (VS Code / Cursor)
+
+## Clone from GitHub
+
+In a terminal (or the VS Code / Cursor terminal):
 
 ```bash
+git clone https://github.com/DeepakBhengra/error-analysis.git
+cd error-analysis
+```
+
+Open the folder in VS Code:
+
+```bash
+code .
+```
+
+(Or **File → Open Folder…** and select `error-analysis`.)
+
+If `web/package.json` is missing after clone (older `main`), switch to the setup branch that adds the Vite manifest:
+
+```bash
+git fetch origin
+git checkout cursor/setup-dev-environment-c154
+```
+
+## Setup and run in the VS Code terminal
+
+Open the integrated terminal: **Terminal → New Terminal** (`` Ctrl+` `` / `` Cmd+` ``).
+All commands below start from the **repo root** (`error-analysis/`).
+
+### 1. Create a virtual environment and install Python deps
+
+**Windows (PowerShell):**
+
+```powershell
 python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # macOS / Linux
+.\.venv\Scripts\Activate.ps1
 pip install -e ".[dev,web]"
 ```
 
-2. Copy `.env.example` to `.env` and configure:
+If `python` is not found, try `py -m venv .venv` instead.
 
-**Datadog**
+**macOS / Linux:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,web]"
+```
+
+You should see `(.venv)` in the terminal prompt after activation.
+
+### 2. Create `.env` and add credentials
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` in VS Code and set:
+
+**Datadog (required)**
 
 - `DD_API_KEY` — API key from Organization Settings → API Keys
 - `DD_APP_KEY` — Application key with `logs_read_data` scope
 - `DD_SITE` — `us5.datadoghq.com` (default)
 
-**Order Create replay**
+**Order Create replay (required for curl / replay / UI Re-Submit)**
 
 - `ORDER_CREATE_USERNAME` / `ORDER_CREATE_PASSWORD` — Basic Auth for `/resellers/v6/orders`
 - `ORDER_CREATE_COOKIE` — optional session cookie
@@ -52,6 +113,74 @@ pip install -e ".[dev,web]"
 - `LOOKUP_API_*` — legacy CORORA error-code lookup service
 
 Credentials are also editable from the web **Settings** tab (`GET`/`PUT /api/settings`).
+
+### 3. Run the application (API + UI)
+
+You need **two** VS Code terminals (click **+** in the terminal panel for a second one).
+Activate `.venv` in each Python terminal first.
+
+**Terminal 1 — API (port 8010)**
+
+From the repo root, with `.venv` active:
+
+```bash
+error-analysis-api
+```
+
+Leave this running. You should see Uvicorn listening on `127.0.0.1:8010`.
+
+**Terminal 2 — Web UI (port 5173)**
+
+```bash
+cd web
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+Leave this running. Vite prints `Local: http://127.0.0.1:5173/`.
+
+### 4. Open the UI
+
+In your browser (on the **same machine** as the terminals), open:
+
+**http://127.0.0.1:5173**
+
+Vite proxies `/api` to the API on port 8010.
+
+Quick credential check (optional, third terminal, `.venv` active):
+
+```bash
+error-analysis validate
+```
+
+### Windows one-shot (optional)
+
+With `.venv` already installed and `.env` configured:
+
+```powershell
+.\start-dev.ps1
+```
+
+This starts the API and then the Vite UI in one PowerShell session.
+
+### Production-style single process (Windows)
+
+```powershell
+.\build-prod.ps1
+.\start-prod.ps1
+```
+
+Or double-click **`Start Error Analysis.bat`**. Then open **http://127.0.0.1:8010**.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `python: command not found` | Use `python3` or `py`, or install Python 3.10+ and reopen the terminal |
+| `npm error ENOENT … package.json` | You are on a branch without the web manifest — `git checkout cursor/setup-dev-environment-c154` |
+| Browser: `ERR_CONNECTION_REFUSED` on `:5173` | Start Vite with `--host 127.0.0.1`; open the URL on the same machine (not a remote PC’s Edge against a VM) |
+| API / Datadog errors | Confirm `.env` has real `DD_API_KEY` / `DD_APP_KEY` (not the example placeholders) |
+| Order Create POST fails | Connect to the corporate VPN; set `ORDER_CREATE_USERNAME` / `ORDER_CREATE_PASSWORD` |
 
 ## Primary usage
 
@@ -212,43 +341,12 @@ error-analysis fetch --url "https://us5.datadoghq.com/logs?query=..."
 
 ## Web UI (Order Create Search & Replay)
 
-React UI (COBOL Scanner–style layout) plus FastAPI backend.
+React UI (COBOL Scanner–style layout) plus FastAPI backend on port **8010**
+(avoids clashing with apps on 8000, e.g. COBOL Error Scanner).
 
-1. Install API deps (from the project root, with venv active):
-
-```bash
-pip install -e ".[web]"
-```
-
-2. Start the API on **port 8010** (uses `.env` for Datadog + Order Create credentials).
-   Port 8010 avoids clashing with other local apps on 8000 (e.g. COBOL Error Scanner):
-
-```bash
-error-analysis-api
-```
-
-**Windows (API + UI in one step — development):**
-
-```powershell
-.\start-dev.ps1
-```
-
-Or:
-
-```bash
-uvicorn error_analysis.api:app --reload --host 127.0.0.1 --port 8010
-```
-
-3. In another terminal, start the UI:
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Open http://127.0.0.1:5173 — Vite proxies `/api` to the Order Replay API on port 8010.
-Restart `npm run dev` after changing `vite.config.ts` so the proxy target updates.
+For clone, install, and VS Code terminal run steps, see
+**[Setup and run in the VS Code terminal](#setup-and-run-in-the-vs-code-terminal)** above.
+Vite proxies `/api` → `8010`. Restart `npm run dev` after changing `vite.config.ts`.
 
 ### UI flow
 
