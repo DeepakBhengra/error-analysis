@@ -12,6 +12,9 @@ from error_analysis.datadog.errors import (
     DatadogRateLimitError,
     DatadogSearchError,
 )
+from error_analysis.logging_config import get_logger
+
+logger = get_logger("datadog.client")
 
 
 class DatadogClient:
@@ -60,6 +63,14 @@ class DatadogClient:
             except httpx.RequestError as exc:
                 last_error = exc
                 if attempt < self.MAX_RETRIES:
+                    logger.warning(
+                        "Datadog %s %s network error (attempt %s/%s): %s",
+                        method,
+                        path,
+                        attempt + 1,
+                        self.MAX_RETRIES + 1,
+                        exc,
+                    )
                     time.sleep(2**attempt)
                     continue
                 host = str(self.settings.api_base_url).rstrip("/")
@@ -70,7 +81,9 @@ class DatadogClient:
                         " DNS lookup failed — check network/VPN and that "
                         f"DD_SITE resolves (current API base: {host})."
                     )
-                raise DatadogError(f"Request failed: {exc}.{hint}") from exc
+                message = f"Request failed: {exc}.{hint}"
+                logger.error("Datadog %s %s failed after retries: %s", method, path, message)
+                raise DatadogError(message) from exc
 
             if response.status_code == 401 or response.status_code == 403:
                 hint = (
@@ -78,31 +91,52 @@ class DatadogClient:
                     "are 40 hex characters (Datadog > Organization Settings > "
                     "Application Keys) and need Logs read access."
                 )
-                raise DatadogAuthError(
+                message = (
                     f"Authentication failed ({response.status_code}): "
                     f"{response.text}.{hint}"
                 )
+                logger.error("Datadog %s %s auth failed: %s", method, path, message)
+                raise DatadogAuthError(message)
 
             if response.status_code == 429:
                 if attempt < self.MAX_RETRIES:
                     retry_after = int(response.headers.get("Retry-After", 2**attempt))
+                    logger.warning(
+                        "Datadog %s %s rate limited; retrying in %ss (attempt %s/%s)",
+                        method,
+                        path,
+                        retry_after,
+                        attempt + 1,
+                        self.MAX_RETRIES + 1,
+                    )
                     time.sleep(retry_after)
                     continue
+                logger.error("Datadog %s %s rate limit exceeded", method, path)
                 raise DatadogRateLimitError("Rate limit exceeded")
 
             if response.status_code in self.RETRYABLE_STATUS:
                 if attempt < self.MAX_RETRIES:
+                    logger.warning(
+                        "Datadog %s %s returned %s; retrying (attempt %s/%s)",
+                        method,
+                        path,
+                        response.status_code,
+                        attempt + 1,
+                        self.MAX_RETRIES + 1,
+                    )
                     time.sleep(2**attempt)
                     continue
-                raise DatadogSearchError(
-                    f"Request failed ({response.status_code}): {response.text}"
-                )
+                message = f"Request failed ({response.status_code}): {response.text}"
+                logger.error("Datadog %s %s failed: %s", method, path, message)
+                raise DatadogSearchError(message)
 
             if response.status_code >= 400:
-                raise DatadogSearchError(
-                    f"Request failed ({response.status_code}): {response.text}"
-                )
+                message = f"Request failed ({response.status_code}): {response.text}"
+                logger.error("Datadog %s %s failed: %s", method, path, message)
+                raise DatadogSearchError(message)
 
             return response.json()
 
-        raise DatadogError(f"Request failed after retries: {last_error}")
+        message = f"Request failed after retries: {last_error}"
+        logger.error("Datadog %s %s failed: %s", method, path, message)
+        raise DatadogError(message)

@@ -22,6 +22,7 @@ from error_analysis.extractors.request_log_payload import (
     build_result_record,
     extract_request_log_payload,
 )
+from error_analysis.logging_config import get_logger, setup_logging
 from error_analysis.order_create.curl_builder import (
     OrderCreateCurlError,
     build_order_create_curl_from_records,
@@ -41,11 +42,28 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+logger = get_logger("cli")
+
+
+@app.callback()
+def _cli_main(
+    log_level: Optional[str] = typer.Option(
+        None,
+        "--log-level",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR). Default: ERROR_ANALYSIS_LOG_LEVEL or INFO.",
+        envvar="ERROR_ANALYSIS_LOG_LEVEL",
+    ),
+) -> None:
+    """Configure application logging for CLI commands."""
+    log_dir = setup_logging(level=log_level)
+    logger.debug("CLI logging ready (log_dir=%s)", log_dir)
+
 
 def _load_settings() -> Settings:
     try:
         return get_settings()
     except Exception as exc:
+        logger.exception("Configuration error while loading settings")
         typer.secho(
             f"Configuration error: {exc}\nCopy .env.example to .env and set DD_API_KEY / DD_APP_KEY.",
             fg=typer.colors.RED,
@@ -62,9 +80,11 @@ def validate() -> None:
         try:
             result = client.validate_credentials()
         except DatadogAuthError as exc:
+            logger.error("Datadog credentials invalid: %s", exc)
             typer.secho(f"Invalid credentials: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1) from exc
         except DatadogError as exc:
+            logger.error("Datadog validation failed: %s", exc)
             typer.secho(f"Validation failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1) from exc
 
@@ -72,6 +92,7 @@ def validate() -> None:
     if valid:
         typer.secho("Credentials are valid.", fg=typer.colors.GREEN)
     else:
+        logger.warning("Unexpected Datadog validation response: %s", result)
         typer.secho(f"Unexpected validation response: {result}", fg=typer.colors.YELLOW)
 
 

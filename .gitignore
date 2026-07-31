@@ -8,5 +8,6 @@ build/
 venv/
 .pytest_cache/
 results/
+logs/
 *.json
 !tests/fixtures/*.json

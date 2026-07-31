@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import os
 import secrets
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.responses import Response
 
 from error_analysis.config import Settings, get_settings
 from error_analysis.datadog.client import DatadogClient
@@ -19,6 +22,7 @@ from error_analysis.datadog.fetch_request import (
     resolve_service_filter,
 )
 from error_analysis.env_file import upsert_env_values
+from error_analysis.logging_config import get_logger, setup_logging
 from error_analysis.order_create.curl_builder import (
     OrderCreateCurl,
     OrderCreateCurlError,
@@ -41,7 +45,22 @@ from error_analysis.order_create.replay import (
 )
 from error_analysis.order_create.validation_repair import repair_order_create_curl
 
-app = FastAPI(title="Error Analysis Order Replay", version="0.1.0")
+logger = get_logger("api")
+
+
+@asynccontextmanager
+async def lifespan(_application: FastAPI):
+    log_dir = setup_logging()
+    logger.info("Error Analysis API starting (log_dir=%s)", log_dir)
+    yield
+    logger.info("Error Analysis API shutting down")
+
+
+app = FastAPI(
+    title="Error Analysis Order Replay",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,6 +69,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next) -> Response:
+    """Log API request completion; failures are also written by route handlers."""
+    if not request.url.path.startswith("/api"):
+        return await call_next(request)
+
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    if response.status_code >= 500:
+        logger.error(
+            "%s %s -> %s (%.1fms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+        )
+    elif response.status_code >= 400:
+        logger.warning(
+            "%s %s -> %s (%.1fms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+        )
+    else:
+        logger.info(
+            "%s %s -> %s (%.1fms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+        )
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Persist unexpected failures and return a stable 500 response.
+
+    ``HTTPException`` is handled by FastAPI's dedicated handler (MRO lookup),
+    so this only runs for truly unhandled errors.
+    """
+    logger.exception(
+        "Unhandled exception on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {exc}"},
+    )
 
 Mode = Literal["one_up", "random"]
 Target = Literal["uat", "qa"]
@@ -150,6 +224,7 @@ def _load_settings() -> Settings:
     try:
         return get_settings()
     except Exception as exc:
+        logger.exception("Configuration error while loading settings")
         raise HTTPException(
             status_code=500,
             detail=f"Configuration error: {exc}. Copy .env.example to .env.",
@@ -236,6 +311,7 @@ def _enrich_failed_statuscode(
         if code:
             return code, extras
     except ErrorLookupError as exc:
+        logger.warning("FAILED statuscode enrichment lookup failed: %s", exc)
         extras["lookupError"] = str(exc)
     return statuscode, extras
 
@@ -336,6 +412,7 @@ def health() -> dict[str, Any]:
         with DatadogClient(settings) as client:
             valid = client.validate_credentials().get("valid", False)
     except Exception as exc:
+        logger.warning("Health check Datadog validation failed: %s", exc)
         return {"ok": False, "datadog": False, "detail": str(exc)}
     return {"ok": True, "datadog": bool(valid)}
 
@@ -374,6 +451,7 @@ def update_app_settings(payload: SettingsUpdateRequest) -> dict[str, Any]:
         try:
             upsert_env_values(updates)
         except OSError as exc:
+            logger.exception("Failed to write settings to .env")
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to write .env: {exc}",
@@ -430,13 +508,18 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
                 service=service,
             )
     except ValueError as exc:
+        logger.warning("order-request invalid input: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DatadogError as exc:
+        logger.error("order-request Datadog fetch failed for %r: %s", text, exc)
         raise HTTPException(
             status_code=502, detail=f"Datadog fetch failed: {exc}"
         ) from exc
 
     if not fetched.records:
+        logger.warning(
+            "order-request found no records for %r (query=%s)", text, fetched.query
+        )
         raise HTTPException(
             status_code=404,
             detail=(
@@ -456,6 +539,7 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
             target=payload.target,
         )
     except OrderCreateCurlError as exc:
+        logger.warning("order-request curl build failed for %r: %s", text, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     order_number = ""
@@ -514,13 +598,18 @@ def order_curl(
                 service=service,
             )
     except ValueError as exc:
+        logger.warning("order-curl invalid input: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DatadogError as exc:
+        logger.error("order-curl Datadog fetch failed for %r: %s", text, exc)
         raise HTTPException(
             status_code=502, detail=f"Datadog fetch failed: {exc}"
         ) from exc
 
     if not fetched.records:
+        logger.warning(
+            "order-curl found no records for %r (query=%s)", text, fetched.query
+        )
         raise HTTPException(
             status_code=404,
             detail=(
@@ -540,6 +629,7 @@ def order_curl(
             target=target,
         )
     except OrderCreateCurlError as exc:
+        logger.warning("order-curl curl build failed for %r: %s", text, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return built.curl
@@ -567,11 +657,14 @@ def run_order(payload: RunRequest) -> dict[str, Any]:
                 service=service,
             )
     except ValueError as exc:
+        logger.warning("run invalid input: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DatadogError as exc:
+        logger.error("run Datadog fetch failed for %r: %s", text, exc)
         raise HTTPException(status_code=502, detail=f"Datadog fetch failed: {exc}") from exc
 
     if not fetched.records:
+        logger.warning("run found no records for %r (query=%s)", text, fetched.query)
         raise HTTPException(
             status_code=404,
             detail=(
@@ -597,9 +690,22 @@ def run_order(payload: RunRequest) -> dict[str, Any]:
             target=payload.target,
         )
     except OrderCreateCurlError as exc:
+        logger.warning("run curl/replay setup failed for %r: %s", text, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("run replay failed for %r", text)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if result.outcome == "FAILED":
+        logger.warning(
+            "run completed with FAILED for %r (statuscode=%s)",
+            text,
+            (result.summary or {}).get("statuscode"),
+        )
+    elif result.outcome == "TIMEOUT":
+        logger.error("run timed out waiting for response logs for %r", text)
+    else:
+        logger.info("run completed with %s for %r", result.outcome, text)
 
     return _api_response(result, settings=settings, source_text=text)
 
@@ -610,8 +716,10 @@ def error_lookup(payload: ErrorLookupRequest) -> dict[str, Any]:
     try:
         return lookup_error_code(settings, payload.error_code)
     except ErrorLookupError as exc:
+        logger.error("error-lookup failed for %r: %s", payload.error_code, exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("error-lookup unexpected failure for %r", payload.error_code)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -624,9 +732,12 @@ def resolve_error(payload: ErrorLookupRequest) -> dict[str, Any]:
     except ErrorLookupError as exc:
         detail = str(exc)
         if "error_code is required" in detail:
+            logger.warning("resolve-error bad request: %s", detail)
             raise HTTPException(status_code=400, detail=detail) from exc
+        logger.error("resolve-error failed for %r: %s", payload.error_code, exc)
         raise HTTPException(status_code=502, detail=detail) from exc
     except Exception as exc:
+        logger.exception("resolve-error unexpected failure for %r", payload.error_code)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -648,9 +759,16 @@ def resubmit_curl(payload: ResubmitRequest) -> dict[str, Any]:
             out_dir=Path("results/last-resubmit"),
         )
     except OrderCreateCurlError as exc:
+        logger.warning("resubmit curl parse/setup failed: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("resubmit replay failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if result.outcome in {"FAILED", "TIMEOUT"}:
+        logger.warning("resubmit completed with %s", result.outcome)
+    else:
+        logger.info("resubmit completed with %s", result.outcome)
 
     return _api_response(result, settings=settings)
 
@@ -709,6 +827,9 @@ _mount_web_ui(app)
 
 def main() -> None:
     import uvicorn
+
+    log_dir = setup_logging()
+    logger.info("Launching Error Analysis API (log_dir=%s)", log_dir)
 
     # Prefer 8010 so this does not collide with other local tools on 8000
     # (e.g. Legacy COBOL Error Scanner API).

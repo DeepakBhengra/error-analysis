@@ -246,6 +246,20 @@ The Order Create Curl panel also shows a live **Probably D / Probably S** hint
 (scored from prod attribute differences). See
 [`docs/observations/order-type-d-vs-s/`](docs/observations/order-type-d-vs-s/).
 
+## Application logs
+
+Runtime errors and API failures are written under ``logs/``:
+
+- ``logs/error-analysis.log`` — general application log
+- ``logs/error-analysis-errors.log`` — warnings and errors only
+
+Configure with:
+
+- ``ERROR_ANALYSIS_LOG_LEVEL`` — ``DEBUG``, ``INFO``, ``WARNING``, or ``ERROR`` (default ``INFO``)
+- ``ERROR_ANALYSIS_LOG_DIR`` — directory for log files (default ``logs/``)
+
+CLI also accepts ``--log-level``.
+
 ## Tests
 
 ```bash
