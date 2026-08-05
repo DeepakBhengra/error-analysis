@@ -1,0 +1,59 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Error Analysis: API",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "ERROR_ANALYSIS_RELOAD": "1"
+        }
+      },
+      "windows": {
+        "command": "${workspaceFolder}\\.venv\\Scripts\\error-analysis-api.exe"
+      },
+      "linux": {
+        "command": "${workspaceFolder}/.venv/bin/error-analysis-api"
+      },
+      "osx": {
+        "command": "${workspaceFolder}/.venv/bin/error-analysis-api"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "error-analysis"
+      }
+    },
+    {
+      "label": "Error Analysis: UI",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/web",
+        "env": {
+          "ERROR_ANALYSIS_SKIP_API_AUTOSTART": "1"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "error-analysis"
+      }
+    },
+    {
+      "label": "Error Analysis: API + UI",
+      "dependsOn": ["Error Analysis: API", "Error Analysis: UI"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}

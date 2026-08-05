@@ -190,8 +190,13 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173 — Vite proxies `/api` to the Order Replay API on port 8010.
+Open the URL Vite prints (http://127.0.0.1:5173, or the next free port such as **5174**).
+Vite proxies `/api` to the Order Replay API on port 8010.
+If the API is not already running, `npm run dev` auto-starts `error-analysis-api` from `.venv`.
 Restart `npm run dev` after changing `vite.config.ts` so the proxy target updates.
+
+**VS Code:** Terminal → Run Task… → **Error Analysis: API + UI** (starts both).
+Or just `npm run dev` in `web/` — the Vite plugin starts the API when needed.
 
 ### Authenticated Order Curl API
 

@@ -39,7 +39,9 @@ async function parseError(res: Response): Promise<string> {
   if (res.status === 502) {
     return (
       'API server unreachable (Bad Gateway). ' +
-      'Start it with: error-analysis-api (listens on http://127.0.0.1:8010).'
+      'Start the API on http://127.0.0.1:8010 — from the repo root run ' +
+      'error-analysis-api, or in VS Code use task "Error Analysis: API + UI", ' +
+      'or restart npm run dev (it auto-starts the API when .venv is installed).'
     )
   }
   return res.statusText || `Request failed (${res.status})`
