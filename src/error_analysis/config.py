@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from error_analysis.env_file import env_file_path
@@ -10,8 +10,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    dd_api_key: str = Field(..., alias="DD_API_KEY")
-    dd_app_key: str = Field(..., alias="DD_APP_KEY")
+    # Classic Datadog auth (API key + Application key).
+    dd_api_key: str = Field(default="", alias="DD_API_KEY")
+    dd_app_key: str = Field(default="", alias="DD_APP_KEY")
+    # Personal / Service Access Token (Bearer). Preferred when set.
+    dd_access_token: str = Field(default="", alias="DD_ACCESS_TOKEN")
     dd_site: str = Field(default="us5.datadoghq.com", alias="DD_SITE")
 
     default_query: str = Field(default='"G0D82"', alias="DEFAULT_QUERY")
@@ -62,6 +65,21 @@ class Settings(BaseSettings):
         default="C:/Legacy-Error-Code-Mapper-ver1/error_mapping_files",
         alias="LOOKUP_CORORA_MAPPINGS",
     )
+
+    @model_validator(mode="after")
+    def require_datadog_credentials(self) -> "Settings":
+        if self.dd_access_token.strip():
+            return self
+        if self.dd_api_key.strip() and self.dd_app_key.strip():
+            return self
+        raise ValueError(
+            "Datadog auth required: set DD_ACCESS_TOKEN (Personal/Service Access Token), "
+            "or both DD_API_KEY and DD_APP_KEY."
+        )
+
+    @property
+    def uses_access_token(self) -> bool:
+        return bool(self.dd_access_token.strip())
 
     @property
     def default_services(self) -> list[str]:

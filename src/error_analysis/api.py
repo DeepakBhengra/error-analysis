@@ -181,6 +181,7 @@ class SettingsUpdateRequest(BaseModel):
 
     dd_api_key: str | None = None
     dd_app_key: str | None = None
+    dd_access_token: str | None = None
     dd_site: str | None = None
     order_create_username: str | None = None
     order_create_password: str | None = None
@@ -202,14 +203,18 @@ def _normalize_mode(value: str) -> Mode:
 def _settings_response(settings: Settings) -> dict[str, Any]:
     dd_api_configured = bool(settings.dd_api_key.strip())
     dd_app_configured = bool(settings.dd_app_key.strip())
+    dd_access_token_configured = bool(settings.dd_access_token.strip())
     password_configured = bool(settings.order_create_password.strip())
     cookie_configured = bool(settings.order_create_cookie.strip())
     return {
         "dd_api_key": "",
         "dd_app_key": "",
+        "dd_access_token": "",
         "dd_site": settings.dd_site,
         "dd_api_key_configured": dd_api_configured,
         "dd_app_key_configured": dd_app_configured,
+        "dd_access_token_configured": dd_access_token_configured,
+        "dd_auth_mode": "access_token" if settings.uses_access_token else "api_keys",
         "order_create_username": settings.order_create_username,
         "order_create_password": "",
         "order_create_cookie": "",
@@ -432,6 +437,8 @@ def update_app_settings(payload: SettingsUpdateRequest) -> dict[str, Any]:
         updates["DD_API_KEY"] = payload.dd_api_key.strip()
     if payload.dd_app_key is not None and payload.dd_app_key.strip():
         updates["DD_APP_KEY"] = payload.dd_app_key.strip()
+    if payload.dd_access_token is not None and payload.dd_access_token.strip():
+        updates["DD_ACCESS_TOKEN"] = payload.dd_access_token.strip()
     if payload.dd_site is not None:
         site = payload.dd_site.strip()
         if site:

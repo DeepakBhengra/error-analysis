@@ -12,6 +12,7 @@ SETTINGS_ENV_KEYS = frozenset(
     {
         "DD_API_KEY",
         "DD_APP_KEY",
+        "DD_ACCESS_TOKEN",
         "DD_SITE",
         "ORDER_CREATE_USERNAME",
         "ORDER_CREATE_PASSWORD",

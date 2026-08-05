@@ -39,3 +39,39 @@ def test_validate_credentials_auth_error(httpx_mock, settings: Settings):
     with DatadogClient(settings) as client:
         with pytest.raises(DatadogAuthError):
             client.validate_credentials()
+
+
+def test_access_token_uses_bearer_auth(httpx_mock):
+    settings = Settings(
+        DD_ACCESS_TOKEN="ddpat_test-token-value",
+        DD_SITE="us5.datadoghq.com",
+    )
+    httpx_mock.add_response(json={"data": []})
+
+    with DatadogClient(settings) as client:
+        result = client.validate_credentials()
+
+    assert result["valid"] is True
+    assert result["auth"] == "access_token"
+    request = httpx_mock.get_requests()[0]
+    assert request.headers["Authorization"] == "Bearer ddpat_test-token-value"
+    assert "DD-API-KEY" not in request.headers
+    assert "DD-APPLICATION-KEY" not in request.headers
+    assert str(request.url).endswith("/api/v2/logs/events/search")
+
+
+def test_access_token_preferred_over_api_keys(httpx_mock):
+    settings = Settings(
+        DD_ACCESS_TOKEN="token-wins",
+        DD_API_KEY="ignored-api",
+        DD_APP_KEY="ignored-app",
+        DD_SITE="us5.datadoghq.com",
+    )
+    httpx_mock.add_response(json={"data": []})
+
+    with DatadogClient(settings) as client:
+        client.search_logs({"filter": {"query": "*"}})
+
+    request = httpx_mock.get_requests()[0]
+    assert request.headers["Authorization"] == "Bearer token-wins"
+    assert "DD-API-KEY" not in request.headers

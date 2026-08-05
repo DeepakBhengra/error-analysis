@@ -65,7 +65,9 @@ def _load_settings() -> Settings:
     except Exception as exc:
         logger.exception("Configuration error while loading settings")
         typer.secho(
-            f"Configuration error: {exc}\nCopy .env.example to .env and set DD_API_KEY / DD_APP_KEY.",
+            f"Configuration error: {exc}\n"
+            "Copy .env.example to .env and set DD_ACCESS_TOKEN, "
+            "or both DD_API_KEY and DD_APP_KEY.",
             fg=typer.colors.RED,
             err=True,
         )

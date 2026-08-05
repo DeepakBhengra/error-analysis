@@ -26,6 +26,7 @@ def settings_env(monkeypatch, tmp_path: Path):
     for key in (
         "DD_API_KEY",
         "DD_APP_KEY",
+        "DD_ACCESS_TOKEN",
         "DD_SITE",
         "ORDER_CREATE_USERNAME",
         "ORDER_CREATE_PASSWORD",
@@ -46,8 +47,11 @@ def test_get_settings_masks_secrets(settings_env):
     data = res.json()
     assert data["dd_api_key"] == ""
     assert data["dd_app_key"] == ""
+    assert data["dd_access_token"] == ""
     assert data["order_create_password"] == ""
     assert data["dd_api_key_configured"] is True
+    assert data["dd_access_token_configured"] is False
+    assert data["dd_auth_mode"] == "api_keys"
     assert data["order_create_password_configured"] is True
     assert data["order_create_username"] == "user1"
     assert data["default_target"] == "uat"
@@ -78,4 +82,21 @@ def test_put_settings_updates_defaults_and_env(settings_env):
     assert "DEFAULT_REPLAY_MODE=random" in text
     assert "ORDER_CREATE_USERNAME=user2" in text
     assert "DD_API_KEY=new-api-key" in text
+
+
+def test_put_settings_persists_access_token(settings_env):
+    from error_analysis.api import app
+
+    client = TestClient(app)
+    res = client.put(
+        "/api/settings",
+        json={"dd_access_token": "ddpat_secret_token"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["dd_access_token"] == ""
+    assert data["dd_access_token_configured"] is True
+    assert data["dd_auth_mode"] == "access_token"
+    text = settings_env.read_text(encoding="utf-8")
+    assert "DD_ACCESS_TOKEN=ddpat_secret_token" in text
     assert "ORDER_CREATE_PASSWORD=secret" in text

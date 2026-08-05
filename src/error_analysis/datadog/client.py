@@ -17,6 +17,23 @@ from error_analysis.logging_config import get_logger
 logger = get_logger("datadog.client")
 
 
+def _auth_headers(settings: Settings) -> dict[str, str]:
+    """Build Datadog auth headers for API/App keys or an access token."""
+    token = settings.dd_access_token.strip()
+    if token:
+        # Personal Access Token / Service Access Token (Bearer).
+        # See: https://docs.datadoghq.com/account_management/personal-access-tokens/
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+    return {
+        "DD-API-KEY": settings.dd_api_key,
+        "DD-APPLICATION-KEY": settings.dd_app_key,
+        "Content-Type": "application/json",
+    }
+
+
 class DatadogClient:
     RETRYABLE_STATUS = {429, 500, 502, 503, 504}
     MAX_RETRIES = 3
@@ -25,11 +42,7 @@ class DatadogClient:
         self.settings = settings
         self._client = client or httpx.Client(
             base_url=settings.api_base_url,
-            headers={
-                "DD-API-KEY": settings.dd_api_key,
-                "DD-APPLICATION-KEY": settings.dd_app_key,
-                "Content-Type": "application/json",
-            },
+            headers=_auth_headers(settings),
             timeout=60.0,
         )
 
@@ -43,10 +56,39 @@ class DatadogClient:
         self.close()
 
     def validate_credentials(self) -> dict[str, Any]:
+        """Validate Datadog credentials.
+
+        Classic API/App keys use ``/api/v1/validate``. Access tokens use a
+        minimal Logs search so we confirm the token can read logs.
+        """
+        if self.settings.uses_access_token:
+            self.search_logs(
+                {
+                    "filter": {
+                        "from": "now-1m",
+                        "to": "now",
+                        "query": "*",
+                    },
+                    "page": {"limit": 1},
+                }
+            )
+            return {"valid": True, "auth": "access_token"}
         return self._request("GET", "api/v1/validate")
 
     def search_logs(self, body: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "api/v2/logs/events/search", json=body)
+
+    def _auth_hint(self) -> str:
+        if self.settings.uses_access_token:
+            return (
+                " Check DD_ACCESS_TOKEN in .env (Personal or Service Access Token) "
+                "and that it includes logs read scope. DD_SITE must match your org."
+            )
+        return (
+            " Check DD_API_KEY and DD_APP_KEY in .env, or set DD_ACCESS_TOKEN. "
+            "Application keys are 40 hex characters (Datadog > Organization "
+            "Settings > Application Keys) and need Logs read access."
+        )
 
     def _request(
         self,
@@ -86,14 +128,9 @@ class DatadogClient:
                 raise DatadogError(message) from exc
 
             if response.status_code == 401 or response.status_code == 403:
-                hint = (
-                    " Check DD_API_KEY and DD_APP_KEY in .env. Application keys "
-                    "are 40 hex characters (Datadog > Organization Settings > "
-                    "Application Keys) and need Logs read access."
-                )
                 message = (
                     f"Authentication failed ({response.status_code}): "
-                    f"{response.text}.{hint}"
+                    f"{response.text}.{self._auth_hint()}"
                 )
                 logger.error("Datadog %s %s auth failed: %s", method, path, message)
                 raise DatadogAuthError(message)

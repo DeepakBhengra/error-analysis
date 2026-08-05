@@ -89,9 +89,12 @@ export interface ResolveErrorResponse {
 export interface AppSettings {
   dd_api_key: string
   dd_app_key: string
+  dd_access_token: string
   dd_site: string
   dd_api_key_configured: boolean
   dd_app_key_configured: boolean
+  dd_access_token_configured: boolean
+  dd_auth_mode: 'access_token' | 'api_keys'
   order_create_username: string
   order_create_password: string
   order_create_cookie: string
@@ -104,6 +107,7 @@ export interface AppSettings {
 export type AppSettingsUpdate = Partial<{
   dd_api_key: string
   dd_app_key: string
+  dd_access_token: string
   dd_site: string
   order_create_username: string
   order_create_password: string

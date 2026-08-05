@@ -12,10 +12,12 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
-2. Copy `.env.example` to `.env` and set your Datadog credentials:
+2. Copy `.env.example` to `.env` and set your Datadog credentials (one of):
 
-- `DD_API_KEY` — API key from Organization Settings → API Keys
-- `DD_APP_KEY` — Application key with `logs_read_data` scope
+- **Access token (preferred):** `DD_ACCESS_TOKEN` — Personal or Service Access Token
+  (Organization Settings → Personal / Service Access Tokens; needs logs read scope).
+  Sent as `Authorization: Bearer …`.
+- **Or classic keys:** `DD_API_KEY` + `DD_APP_KEY` (App key needs `logs_read_data`)
 - `DD_SITE` — `us5.datadoghq.com` (default)
 
 ## Primary usage
