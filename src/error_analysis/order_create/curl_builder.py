@@ -113,15 +113,20 @@ def resolve_order_create_url(
         return TARGET_URLS[normalized_target]
 
     key = (service or "", host or "")
-    if key not in SERVICE_HOST_URL_MAP:
-        known = ", ".join(
-            f"{svc}/{hst}" for svc, hst in sorted(SERVICE_HOST_URL_MAP)
-        )
-        raise OrderCreateCurlError(
-            f"Unsupported service/host {service!r}/{host!r}. "
-            f"Known pairs: {known}."
-        )
-    return SERVICE_HOST_URL_MAP[key]
+    if key in SERVICE_HOST_URL_MAP:
+        return SERVICE_HOST_URL_MAP[key]
+
+    # Test / non-portal OrderCreate_v2* hosts (e.g. uschleai3501) replay via UAT/QA.
+    if _is_v2_family_service(service) and normalized_target in TARGET_URLS:
+        return TARGET_URLS[normalized_target]
+
+    known = ", ".join(
+        f"{svc}/{hst}" for svc, hst in sorted(SERVICE_HOST_URL_MAP)
+    )
+    raise OrderCreateCurlError(
+        f"Unsupported service/host {service!r}/{host!r}. "
+        f"Known pairs: {known}."
+    )
 
 
 def normalize_order_create_target(target: str | None) -> str:
@@ -441,6 +446,16 @@ def is_prod_v2_body_record(record: dict[str, Any]) -> bool:
     )
 
 
+def is_convertible_v2_body_record(record: dict[str, Any]) -> bool:
+    """Any OrderCreate_v2* record with an ordercreaterequest payload (any host)."""
+    request = record.get("request")
+    return (
+        _is_v2_family_service(record.get("service"))
+        and isinstance(request, dict)
+        and isinstance(request.get("ordercreaterequest"), dict)
+    )
+
+
 def _is_buildable_body_request(request: Any) -> bool:
     """True when build_order_create_curl can produce a v6 body from this request."""
     if not isinstance(request, dict):
@@ -517,7 +532,7 @@ def find_order_create_records(records: list[dict[str, Any]]) -> list[dict[str, A
     ]
     if mapped_v2:
         return mapped_v2
-    return [record for record in records if is_prod_v2_body_record(record)]
+    return [record for record in records if is_convertible_v2_body_record(record)]
 
 
 def _record_correlation_id(record: dict[str, Any] | None) -> str | None:
@@ -552,7 +567,11 @@ def build_order_create_curl(
         raise OrderCreateCurlError("Record is missing request object.")
 
     normalized_target = normalize_order_create_target(target)
-    if is_prod_v6_body_record(record) or is_prod_v2_body_record(record):
+    if (
+        is_prod_v6_body_record(record)
+        or is_prod_v2_body_record(record)
+        or is_convertible_v2_body_record(record)
+    ):
         url = resolve_order_create_url(
             service if isinstance(service, str) else None,
             host if isinstance(host, str) else None,
@@ -652,9 +671,9 @@ def build_order_create_curl_from_records(
     body_candidates = find_order_create_records(records)
     if not body_candidates:
         raise OrderCreateCurlError(
-            "No prod v6 body (AsyncOrderCreate / OrderCreate_v6_* on "
-            "uschileai1401-04), OrderCreate_v6/uschileai2503, mapped "
-            "OrderCreate_v2, or prod OrderCreate_v2* body record found."
+            "No Order Create body record found (AsyncOrderCreate / "
+            "OrderCreate_v6_* on uschileai1401-04, OrderCreate_v6/uschileai2503, "
+            "mapped OrderCreate_v2, or OrderCreate_v2* with ordercreaterequest)."
         )
     if index < 0 or index >= len(body_candidates):
         raise OrderCreateCurlError(
