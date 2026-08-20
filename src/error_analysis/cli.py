@@ -362,8 +362,9 @@ def build_order_curl(
     )
     if not matches:
         typer.secho(
-            "No AsyncOrderCreate, OrderCreate_v6/uschileai2503, "
-            "or mapped OrderCreate_v2 body record found.",
+            "No Order Create body record found (AsyncOrderCreate, "
+            "OrderCreate_v6/uschileai2503, mapped OrderCreate_v2, "
+            "or OrderCreate_v2* with ordercreaterequest).",
             fg=typer.colors.RED,
             err=True,
         )

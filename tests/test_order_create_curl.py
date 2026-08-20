@@ -175,7 +175,7 @@ def test_metadata_only_v6_record_does_not_mask_convertible_v2_body():
 
 
 def test_metadata_only_records_alone_raise_no_body_error():
-    with pytest.raises(OrderCreateCurlError, match="No prod v6 body"):
+    with pytest.raises(OrderCreateCurlError, match="No Order Create body record found"):
         build_order_create_curl_from_records(
             [_sample_v6_metadata()],
             username="u",
@@ -205,6 +205,25 @@ def test_v2_fallback_when_no_v6():
     assert "curl --location" in built.curl
     token = base64.b64encode(b"user:pass").decode("ascii")
     assert f"Authorization: Basic {token}" in built.curl
+
+
+def test_v2_test_host_uschleai3501_uses_target_url():
+    """TIBCO test hosts (e.g. uschleai3501) are not prod 1401-04 but carry v2 bodies."""
+    records = [_sample_v2(host="uschleai3501")]
+    matches = find_order_create_records(records)
+    assert len(matches) == 1
+    assert matches[0]["host"] == "uschleai3501"
+    built = build_order_create_curl_from_records(
+        records,
+        username="user",
+        password="pass",
+        target="uat",
+    )
+    assert built.url == UAT_ORDERS_URL
+    assert built.source == "v2-converted"
+    assert resolve_order_create_url("OrderCreate_v2", "uschleai3501", target="uat") == (
+        UAT_ORDERS_URL
+    )
 
 
 def test_v6_portal_body_is_not_reconverted():
