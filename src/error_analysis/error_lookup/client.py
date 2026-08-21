@@ -77,6 +77,24 @@ def _normalize_response(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _format_lookup_http_error(status_code: int, detail: str) -> str:
+    """Turn lookup-service HTTP errors into actionable messages for the UI."""
+    if status_code == 503 and "COBOL_EXTERNAL_API_KEY" in detail:
+        return (
+            f"Lookup service returned {status_code}: {detail}\n\n"
+            "The Legacy COBOL Error Scanner (port 8000) is running but its "
+            "external lookup API is not configured.\n"
+            "On that service (not Error Analysis), set in .env or environment:\n"
+            "  COBOL_EXTERNAL_API_KEY=...\n"
+            "  COBOL_EXTERNAL_APPLICATION_KEY=...\n"
+            "Then restart the scanner on http://127.0.0.1:8000.\n"
+            "Ask your team for the external API credentials if needed."
+        )
+    if status_code == 503:
+        return f"Lookup service unavailable (503): {detail}"
+    return f"Lookup service returned {status_code}: {detail}"
+
+
 def _post_lookup(settings: Settings, body: dict[str, str]) -> dict[str, Any]:
     headers = {
         "Content-Type": "application/json",
@@ -88,13 +106,16 @@ def _post_lookup(settings: Settings, body: dict[str, str]) -> dict[str, Any]:
         with httpx.Client(timeout=60.0) as client:
             response = client.post(settings.lookup_api_url, json=body, headers=headers)
     except httpx.RequestError as exc:
-        raise ErrorLookupError(f"Lookup service unreachable: {exc}") from exc
+        raise ErrorLookupError(
+            "Lookup service unreachable: "
+            f"{exc}\n\n"
+            "Start the Legacy COBOL Error Scanner on http://127.0.0.1:8000 "
+            "(see README — Error Code Description)."
+        ) from exc
 
     if response.status_code >= 400:
         detail = response.text.strip() or response.reason_phrase
-        raise ErrorLookupError(
-            f"Lookup service returned {response.status_code}: {detail}"
-        )
+        raise ErrorLookupError(_format_lookup_http_error(response.status_code, detail))
 
     try:
         payload = response.json()

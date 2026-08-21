@@ -267,6 +267,52 @@ Configure with:
 
 CLI also accepts ``--log-level``.
 
+## Error Code Description (lookup popup)
+
+Clicking an error code in the results table calls a **second** local service — the
+**Legacy COBOL Error Scanner** on port **8000** (Error Analysis itself runs on **8010**).
+
+### Required services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| Error Analysis API | 8010 | Datadog search, replay, UI API |
+| Legacy COBOL Error Scanner | 8000 | Error code description / business logic |
+
+### Setup
+
+1. Start **Legacy-Error-Code-Mapper** / COBOL Error Scanner on port **8000** (see that repo's README).
+
+2. In **that** project's `.env` (the scanner on :8000, not only Error Analysis), set:
+
+```env
+COBOL_EXTERNAL_API_KEY=your_external_api_key
+COBOL_EXTERNAL_APPLICATION_KEY=your_external_application_key
+```
+
+3. Restart the scanner on :8000 after saving.
+
+4. In **Error Analysis** `.env`, keep the lookup client settings (paths must exist on your PC):
+
+```env
+LOOKUP_API_URL=http://127.0.0.1:8000/api/v1/lookup
+LOOKUP_API_KEY=cobolilapp
+LOOKUP_APPLICATION_KEY=deepakcobolil88206
+LOOKUP_SOURCE_ROOT=C:/Legacy-Error-Code-Mapper-ver1/samples
+LOOKUP_RULES_PATH=C:/Legacy-Error-Code-Mapper-ver1/config/error_rules.json
+LOOKUP_CORORA_MAPPINGS=C:/Legacy-Error-Code-Mapper-ver1/error_mapping_files
+```
+
+5. Restart `error-analysis-api` and retry the error-code click in the UI.
+
+### Common errors
+
+| Message | Fix |
+|---------|-----|
+| `WinError 10061` / connection refused | Scanner not running — start port **8000** |
+| `503 External lookup API is not configured` | Set `COBOL_EXTERNAL_*` on the **8000** scanner, restart it |
+| `502` / timeout | Check VPN / paths in `LOOKUP_*` settings |
+
 ## Tests
 
 ```bash
