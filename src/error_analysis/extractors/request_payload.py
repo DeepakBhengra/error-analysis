@@ -11,6 +11,7 @@ DEFAULT_PAYLOAD_PATHS = [
 ]
 
 from error_analysis.extractors.request_log_payload import (
+    _extract_balanced_json,
     _extract_json_object_after_key,
     _get_by_path,
     _parse_json_value,
@@ -18,6 +19,25 @@ from error_analysis.extractors.request_log_payload import (
 )
 
 _MODIFY_PAYLOAD_TAG = "RequestPayload"
+_REQUEST_PAYLOAD_MARKERS = (
+    "RequestPayload:- ",
+    "RequestPayload:-",
+    "RequestPayload: ",
+)
+
+
+def _extract_after_request_payload_marker(message: str) -> Any | None:
+    """Handle TIBCO text like ``OrderNumber:- … RequestPayload:- {...}``."""
+    for marker in _REQUEST_PAYLOAD_MARKERS:
+        idx = message.find(marker)
+        if idx < 0:
+            continue
+        start = idx + len(marker)
+        while start < len(message) and message[start].isspace():
+            start += 1
+        if start < len(message) and message[start] == "{":
+            return _extract_balanced_json(message, start)
+    return None
 
 
 def _extract_from_message(message: str) -> Any | None:
@@ -27,6 +47,10 @@ def _extract_from_message(message: str) -> Any | None:
     parsed = _parse_json_value(message)
     if isinstance(parsed, dict) and "RequestPayload" in parsed:
         return parsed["RequestPayload"]
+
+    marked = _extract_after_request_payload_marker(message)
+    if marked is not None:
+        return marked
 
     embedded = _extract_json_object_after_key(message, "RequestPayload")
     if embedded is not None:

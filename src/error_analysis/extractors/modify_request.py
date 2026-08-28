@@ -16,6 +16,10 @@ _ORDER_ID_IN_MESSAGE_RE = re.compile(
     r"/resellers/v6/orders/(\d+-\d+-\d+)",
     re.IGNORECASE,
 )
+_ORDER_NUMBER_TEXT_RE = re.compile(
+    r"OrderNumber:-\s*(\d+-[A-Za-z0-9]+-\d+)",
+    re.IGNORECASE,
+)
 
 
 def _is_modify_service(service: Any) -> bool:
@@ -70,12 +74,20 @@ def extract_modify_request(log_event: dict[str, Any]) -> Any | None:
 
 
 def extract_order_id_from_message(log_event: dict[str, Any]) -> str | None:
-    """Extract Ingram order id from a log message URI (/orders/29-44694-11)."""
+    """Extract Ingram order id from log message (URI or OrderNumber:- text)."""
     attributes = log_event.get("attributes") or {}
     message = attributes.get("message", "")
     if not isinstance(message, str) or not message.strip():
+        # Fetch records may store a flattened message field.
+        message = log_event.get("message", "")
+    if not isinstance(message, str) or not message.strip():
         return None
+
     match = _ORDER_ID_IN_MESSAGE_RE.search(message)
     if match:
         return match.group(1).strip()
+
+    order_match = _ORDER_NUMBER_TEXT_RE.search(message)
+    if order_match:
+        return order_match.group(1).strip()
     return None

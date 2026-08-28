@@ -204,6 +204,7 @@ def build_fetch_request_record(
     env: str = "",
 ) -> dict[str, Any]:
     attributes = log_event.get("attributes") or {}
+    message = attributes.get("message", "")
     return {
         "log_id": log_event.get("id"),
         "timestamp": attributes.get("timestamp"),
@@ -214,6 +215,7 @@ def build_fetch_request_record(
         "correlation_id": correlation_id,
         "job_id": job_id,
         "customer_po": customer_po,
+        "message": message if isinstance(message, str) else "",
         "request": request,
         "response": response,
         "RequestLogPayload": request,

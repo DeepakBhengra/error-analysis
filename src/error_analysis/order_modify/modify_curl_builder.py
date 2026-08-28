@@ -38,6 +38,18 @@ _IM_HEADER_IN_MESSAGE_RE = re.compile(
     r"IM-(?:CountryCode|CustomerNumber|CorrelationId|CorrelationID|SenderID)\s*:\s*[^\s\\]+",
     re.IGNORECASE,
 )
+_XML_COUNTRY_RE = re.compile(
+    r"<(?:\w+:)?CountryCode>(.*?)</(?:\w+:)?CountryCode>",
+    re.IGNORECASE | re.DOTALL,
+)
+_XML_CUSTOMER_RE = re.compile(
+    r"<(?:\w+:)?CustomerNumber>(.*?)</(?:\w+:)?CustomerNumber>",
+    re.IGNORECASE | re.DOTALL,
+)
+_XML_CORRELATION_RE = re.compile(
+    r"<(?:\w+:)?CorrelationId>(.*?)</(?:\w+:)?CorrelationId>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 class OrderModifyCurlError(ValueError):
@@ -124,6 +136,11 @@ def _resolve_order_id(records: list[dict[str, Any]], body_record: dict[str, Any]
         order_id = extract_order_id_from_message(record)
         if order_id:
             return order_id
+        message = record.get("message")
+        if isinstance(message, str) and message.strip():
+            order_id = extract_order_id_from_message({"message": message})
+            if order_id:
+                return order_id
 
     from_response = find_globalorderid_in_records(records)
     if from_response:
@@ -147,6 +164,21 @@ def _resolve_order_id(records: list[dict[str, Any]], body_record: dict[str, Any]
         "Expected globalorderid/ingramOrderNumber in sibling logs or "
         "/resellers/v6/orders/{orderId} in the log message."
     )
+
+
+def _headers_from_xml_log_message(message: str) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for pattern, key in (
+        (_XML_COUNTRY_RE, "IM-CountryCode"),
+        (_XML_CUSTOMER_RE, "IM-CustomerNumber"),
+        (_XML_CORRELATION_RE, "IM-CorrelationId"),
+    ):
+        match = pattern.search(message)
+        if match:
+            value = match.group(1).strip()
+            if value:
+                headers[key] = value
+    return headers
 
 
 def build_order_modify_headers(
@@ -178,6 +210,9 @@ def build_order_modify_headers(
                 message = record["message"]
             if message:
                 headers = _headers_from_im_message(message)
+                if headers:
+                    break
+                headers = _headers_from_xml_log_message(message)
                 if headers:
                     break
 
