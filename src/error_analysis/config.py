@@ -38,7 +38,21 @@ class Settings(BaseSettings):
     order_create_password: str = Field(default="", alias="ORDER_CREATE_PASSWORD")
     order_create_cookie: str = Field(default="", alias="ORDER_CREATE_COOKIE")
 
+    order_modify_test_username: str = Field(
+        default="", alias="ORDER_MODIFY_TEST_USERNAME"
+    )
+    order_modify_test_password: str = Field(
+        default="", alias="ORDER_MODIFY_TEST_PASSWORD"
+    )
+    order_modify_qa1_username: str = Field(default="", alias="ORDER_MODIFY_QA1_USERNAME")
+    order_modify_qa1_password: str = Field(default="", alias="ORDER_MODIFY_QA1_PASSWORD")
+    order_modify_services: str = Field(
+        default="OrderModify_v6*",
+        alias="ORDER_MODIFY_SERVICES",
+    )
+
     default_order_create_target: str = Field(default="uat", alias="DEFAULT_ORDER_CREATE_TARGET")
+    default_order_modify_target: str = Field(default="test", alias="DEFAULT_ORDER_MODIFY_TARGET")
     default_replay_mode: str = Field(default="one_up", alias="DEFAULT_REPLAY_MODE")
 
     # Inbound API key for POST /api/v1/order-curl (never expose in responses).
@@ -89,6 +103,10 @@ class Settings(BaseSettings):
     @property
     def default_async_order_hosts(self) -> list[str]:
         return [part.strip() for part in self.async_order_hosts.split(",") if part.strip()]
+
+    @property
+    def default_modify_services(self) -> list[str]:
+        return [part.strip() for part in self.order_modify_services.split(",") if part.strip()]
 
     @property
     def api_base_url(self) -> str:

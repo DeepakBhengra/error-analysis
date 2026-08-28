@@ -3,9 +3,11 @@ import type {
   AppSettingsUpdate,
   ErrorLookupResponse,
   OrderRequestPreviewResponse,
+  OrderModifyPreviewResponse,
   ReplayApiResponse,
   ReplayMode,
   OrderCreateTarget,
+  OrderModifyTarget,
   ResolveErrorResponse,
 } from './types'
 
@@ -67,6 +69,28 @@ export async function fetchOrderRequest(params: {
   })
   if (!res.ok) throw new ApiError(res.status, await parseError(res))
   return res.json() as Promise<OrderRequestPreviewResponse>
+}
+
+export async function fetchOrderModifyRequest(params: {
+  text: string
+  from?: string
+  to?: string
+  target?: OrderModifyTarget
+  signal?: AbortSignal
+}): Promise<OrderModifyPreviewResponse> {
+  const res = await fetch('/api/order-modify-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: params.text,
+      from: params.from,
+      to: params.to,
+      target: params.target ?? 'test',
+    }),
+    signal: params.signal,
+  })
+  if (!res.ok) throw new ApiError(res.status, await parseError(res))
+  return res.json() as Promise<OrderModifyPreviewResponse>
 }
 
 export async function runReplay(params: {

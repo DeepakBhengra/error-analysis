@@ -200,6 +200,57 @@ body {
   margin-bottom: 14px;
 }
 
+.curl-type-fieldset {
+  border: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.curl-type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.curl-panel-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.curl-panel-tab {
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-radius: 2px 2px 0 0;
+  margin-bottom: -1px;
+}
+
+.curl-panel-tab.active {
+  color: var(--accent);
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+.curl-panel-tab:hover:not(.active) {
+  color: var(--text);
+  background: #fafafa;
+}
+
 .search-row {
   display: flex;
   gap: 10px;

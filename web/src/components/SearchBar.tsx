@@ -1,28 +1,39 @@
 import type { FormEvent } from 'react'
 
+import type { CurlType } from '../types'
+
 interface SearchBarProps {
   query: string
   from: string
   to: string
+  curlTypes: CurlType[]
   loading: boolean
   canCancel?: boolean
   onQueryChange: (value: string) => void
   onFromChange: (value: string) => void
   onToChange: (value: string) => void
+  onCurlTypesChange: (value: CurlType[]) => void
   onRun: () => void
   onCancel?: () => void
   onRefresh: () => void
 }
 
+const CURL_TYPE_OPTIONS: { value: CurlType; label: string }[] = [
+  { value: 'create', label: 'Order Create curl' },
+  { value: 'modify', label: 'Order Modify curl' },
+]
+
 export function SearchBar({
   query,
   from,
   to,
+  curlTypes,
   loading,
   canCancel = false,
   onQueryChange,
   onFromChange,
   onToChange,
+  onCurlTypesChange,
   onRun,
   onCancel,
   onRefresh,
@@ -32,8 +43,30 @@ export function SearchBar({
     onRun()
   }
 
+  const toggleCurlType = (type: CurlType) => {
+    if (curlTypes.includes(type)) {
+      const next = curlTypes.filter((item) => item !== type)
+      onCurlTypesChange(next.length ? next : [type])
+      return
+    }
+    onCurlTypesChange([...curlTypes, type])
+  }
+
   return (
     <form className="search-section" onSubmit={handleSubmit}>
+      <fieldset className="curl-type-fieldset" disabled={loading}>
+        <legend className="sr-only">Curl types to build</legend>
+        {CURL_TYPE_OPTIONS.map((option) => (
+          <label key={option.value} className="curl-type-option">
+            <input
+              type="checkbox"
+              checked={curlTypes.includes(option.value)}
+              onChange={() => toggleCurlType(option.value)}
+            />
+            {option.label}
+          </label>
+        ))}
+      </fieldset>
       <div className="search-row">
         <div className="search-input-wrap">
           <svg
@@ -53,10 +86,14 @@ export function SearchBar({
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             disabled={loading}
-            aria-label="Search Datadog Order Create logs"
+            aria-label="Search Datadog logs by customer order number"
           />
         </div>
-        <button type="submit" className="btn-outline-primary" disabled={loading || !query.trim()}>
+        <button
+          type="submit"
+          className="btn-outline-primary"
+          disabled={loading || !query.trim() || !curlTypes.length}
+        >
           RUN
         </button>
         {canCancel ? (

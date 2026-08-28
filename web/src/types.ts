@@ -1,8 +1,11 @@
 export type ReplayMode = 'one_up' | 'random'
 export type OrderCreateTarget = 'uat' | 'qa'
+export type OrderModifyTarget = 'test' | 'qa1'
+export type CurlType = 'create' | 'modify'
 export type Outcome = 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'UNKNOWN' | 'READY'
 export type TabFilter = 'all' | 'success' | 'failed'
 export type OrderRequestSource = 'v6' | 'v2-converted'
+export type CurlPanelTab = 'create' | 'modify'
 
 export interface ReplayApiResponse {
   outcome: Outcome
@@ -45,6 +48,21 @@ export interface OrderRequestPreviewResponse {
   url: string
   query?: string
   recordCount?: number
+}
+
+export interface OrderModifyPreviewResponse {
+  outcome: 'READY'
+  message: string
+  curl: string
+  body: Record<string, unknown>
+  customerOrderNumber: string
+  originalCustomerOrderNumber: string
+  sourceSearchText?: string | null
+  url: string
+  orderId: string
+  query?: string
+  recordCount?: number
+  target?: OrderModifyTarget
 }
 
 export interface SessionResult extends ReplayApiResponse {
@@ -100,7 +118,14 @@ export interface AppSettings {
   order_create_cookie: string
   order_create_password_configured: boolean
   order_create_cookie_configured: boolean
+  order_modify_test_username: string
+  order_modify_test_password: string
+  order_modify_qa1_username: string
+  order_modify_qa1_password: string
+  order_modify_test_password_configured: boolean
+  order_modify_qa1_password_configured: boolean
   default_target: OrderCreateTarget
+  default_modify_target: OrderModifyTarget
   default_mode: ReplayMode
 }
 
@@ -112,6 +137,11 @@ export type AppSettingsUpdate = Partial<{
   order_create_username: string
   order_create_password: string
   order_create_cookie: string
+  order_modify_test_username: string
+  order_modify_test_password: string
+  order_modify_qa1_username: string
+  order_modify_qa1_password: string
   default_target: OrderCreateTarget
+  default_modify_target: OrderModifyTarget
   default_mode: ReplayMode
 }>
