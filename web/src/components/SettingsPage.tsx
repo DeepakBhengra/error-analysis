@@ -1,9 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ApiError, fetchSettings, isAbortError, updateSettings } from '../api'
-import type { AppSettings, OrderCreateTarget, ReplayMode } from '../types'
+import type { AppSettings, OrderCreateTarget, OrderModifyTarget, ReplayMode } from '../types'
 
 interface SettingsPageProps {
-  onSaved: (defaults: { mode: ReplayMode; target: OrderCreateTarget }) => void
+  onSaved: (defaults: {
+    mode: ReplayMode
+    target: OrderCreateTarget
+    modifyTarget: OrderModifyTarget
+  }) => void
 }
 
 const emptyForm = {
@@ -14,7 +18,12 @@ const emptyForm = {
   order_create_username: '',
   order_create_password: '',
   order_create_cookie: '',
+  order_modify_test_username: '',
+  order_modify_test_password: '',
+  order_modify_qa1_username: '',
+  order_modify_qa1_password: '',
   default_target: 'uat' as OrderCreateTarget,
+  default_modify_target: 'test' as OrderModifyTarget,
   default_mode: 'one_up' as ReplayMode,
 }
 
@@ -26,6 +35,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     dd_access_token: false,
     order_create_password: false,
     order_create_cookie: false,
+    order_modify_test_password: false,
+    order_modify_qa1_password: false,
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -59,7 +70,12 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
       order_create_username: data.order_create_username || '',
       order_create_password: '',
       order_create_cookie: '',
+      order_modify_test_username: data.order_modify_test_username || '',
+      order_modify_test_password: '',
+      order_modify_qa1_username: data.order_modify_qa1_username || '',
+      order_modify_qa1_password: '',
       default_target: data.default_target === 'qa' ? 'qa' : 'uat',
+      default_modify_target: data.default_modify_target === 'qa1' ? 'qa1' : 'test',
       default_mode: data.default_mode === 'random' ? 'random' : 'one_up',
     })
     setConfigured({
@@ -68,6 +84,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
       dd_access_token: data.dd_access_token_configured,
       order_create_password: data.order_create_password_configured,
       order_create_cookie: data.order_create_cookie_configured,
+      order_modify_test_password: data.order_modify_test_password_configured,
+      order_modify_qa1_password: data.order_modify_qa1_password_configured,
     })
   }
 
@@ -82,7 +100,10 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         dd_site: form.dd_site.trim(),
         order_create_username: form.order_create_username.trim(),
         default_target: form.default_target,
+        default_modify_target: form.default_modify_target,
         default_mode: form.default_mode,
+        order_modify_test_username: form.order_modify_test_username.trim(),
+        order_modify_qa1_username: form.order_modify_qa1_username.trim(),
         ...(form.dd_api_key.trim() ? { dd_api_key: form.dd_api_key.trim() } : {}),
         ...(form.dd_app_key.trim() ? { dd_app_key: form.dd_app_key.trim() } : {}),
         ...(form.dd_access_token.trim()
@@ -94,10 +115,20 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         ...(form.order_create_cookie.trim()
           ? { order_create_cookie: form.order_create_cookie.trim() }
           : {}),
+        ...(form.order_modify_test_password.trim()
+          ? { order_modify_test_password: form.order_modify_test_password.trim() }
+          : {}),
+        ...(form.order_modify_qa1_password.trim()
+          ? { order_modify_qa1_password: form.order_modify_qa1_password.trim() }
+          : {}),
       }
       const data = await updateSettings(payload)
       applySettings(data)
-      onSaved({ mode: data.default_mode, target: data.default_target })
+      onSaved({
+        mode: data.default_mode,
+        target: data.default_target,
+        modifyTarget: data.default_modify_target,
+      })
       setMessage('Settings saved.')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to save settings')
@@ -142,6 +173,31 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   onChange={() => setForm((prev) => ({ ...prev, default_target: 'qa' }))}
                 />
                 QA
+              </label>
+            </fieldset>
+            <fieldset className="mode-fieldset">
+              <legend className="sr-only">Order Modify target</legend>
+              <label className="mode-option">
+                <input
+                  type="radio"
+                  name="default_modify_target"
+                  checked={form.default_modify_target === 'test'}
+                  onChange={() =>
+                    setForm((prev) => ({ ...prev, default_modify_target: 'test' }))
+                  }
+                />
+                api-test
+              </label>
+              <label className="mode-option">
+                <input
+                  type="radio"
+                  name="default_modify_target"
+                  checked={form.default_modify_target === 'qa1'}
+                  onChange={() =>
+                    setForm((prev) => ({ ...prev, default_modify_target: 'qa1' }))
+                  }
+                />
+                api-qa1
               </label>
             </fieldset>
             <fieldset className="mode-fieldset">
@@ -258,6 +314,74 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
               value={form.order_create_cookie}
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, order_create_cookie: e.target.value }))
+              }
+            />
+          </label>
+        </fieldset>
+
+        <fieldset className="settings-section" disabled={loading || saving}>
+          <legend>Order Modify Basic Auth (api-test)</legend>
+          <p className="settings-hint">
+            Credentials for PUT https://api-test.ingrammicro.com/resellers/v6/orders/…
+          </p>
+          <label className="settings-field">
+            <span>Username</span>
+            <input
+              type="text"
+              autoComplete="off"
+              value={form.order_modify_test_username}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, order_modify_test_username: e.target.value }))
+              }
+            />
+          </label>
+          <label className="settings-field">
+            <span>Password</span>
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder={
+                configured.order_modify_test_password
+                  ? 'Configured — leave blank to keep'
+                  : ''
+              }
+              value={form.order_modify_test_password}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, order_modify_test_password: e.target.value }))
+              }
+            />
+          </label>
+        </fieldset>
+
+        <fieldset className="settings-section" disabled={loading || saving}>
+          <legend>Order Modify Basic Auth (api-qa1)</legend>
+          <p className="settings-hint">
+            Credentials for PUT https://api-qa1.ingrammicro.com/resellers/v6/orders/…
+          </p>
+          <label className="settings-field">
+            <span>Username</span>
+            <input
+              type="text"
+              autoComplete="off"
+              value={form.order_modify_qa1_username}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, order_modify_qa1_username: e.target.value }))
+              }
+            />
+          </label>
+          <label className="settings-field">
+            <span>Password</span>
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder={
+                configured.order_modify_qa1_password
+                  ? 'Configured — leave blank to keep'
+                  : ''
+              }
+              value={form.order_modify_qa1_password}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, order_modify_qa1_password: e.target.value }))
               }
             />
           </label>

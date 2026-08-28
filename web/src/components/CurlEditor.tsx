@@ -1,14 +1,20 @@
 import { useMemo } from 'react'
 
 import { guessOrderTypeFromCurl } from '../guessOrderType'
-import type { CurlHttpResponse } from '../types'
+import type { CurlHttpResponse, CurlPanelTab } from '../types'
 
 interface CurlEditorProps {
-  curl: string
+  activeTab: CurlPanelTab
+  onTabChange: (tab: CurlPanelTab) => void
+  showCreateTab: boolean
+  showModifyTab: boolean
+  createCurl: string
+  modifyCurl: string
   loading: boolean
   canCancel?: boolean
   httpResponse?: CurlHttpResponse | null
-  onChange: (value: string) => void
+  onCreateChange: (value: string) => void
+  onModifyChange: (value: string) => void
   onResubmit: () => void
   onCancel?: () => void
 }
@@ -30,25 +36,59 @@ function formatHttpBody(body: unknown): string {
 }
 
 export function CurlEditor({
-  curl,
+  activeTab,
+  onTabChange,
+  showCreateTab,
+  showModifyTab,
+  createCurl,
+  modifyCurl,
   loading,
   canCancel = false,
   httpResponse = null,
-  onChange,
+  onCreateChange,
+  onModifyChange,
   onResubmit,
   onCancel,
 }: CurlEditorProps) {
+  const curl = activeTab === 'modify' ? modifyCurl : createCurl
+  const onChange = activeTab === 'modify' ? onModifyChange : onCreateChange
+
   const responseText =
     httpResponse && httpResponse.httpBody !== undefined && httpResponse.httpBody !== null
       ? formatHttpBody(httpResponse.httpBody)
       : ''
 
-  const orderTypeHint = useMemo(() => guessOrderTypeFromCurl(curl), [curl])
+  const orderTypeHint = useMemo(
+    () => (activeTab === 'create' ? guessOrderTypeFromCurl(createCurl) : null),
+    [activeTab, createCurl],
+  )
+
+  const panelTitle = activeTab === 'modify' ? 'Order Modify Curl' : 'Order Create Curl'
 
   return (
     <section className="curl-panel">
+      <div className="curl-panel-tabs">
+        {showCreateTab ? (
+          <button
+            type="button"
+            className={`curl-panel-tab${activeTab === 'create' ? ' active' : ''}`}
+            onClick={() => onTabChange('create')}
+          >
+            Order Create curl
+          </button>
+        ) : null}
+        {showModifyTab ? (
+          <button
+            type="button"
+            className={`curl-panel-tab${activeTab === 'modify' ? ' active' : ''}`}
+            onClick={() => onTabChange('modify')}
+          >
+            Order Modify curl
+          </button>
+        ) : null}
+      </div>
       <div className="curl-panel-header">
-        <h2>Order Create Curl</h2>
+        <h2>{panelTitle}</h2>
         <div className="curl-panel-actions">
           <button
             type="button"
@@ -66,9 +106,9 @@ export function CurlEditor({
         </div>
       </div>
       <p className="curl-hint">
-        RUN prepares a v6 Order Create curl (converting from v2 when needed) without posting.
-        Edit below, then Re-Submit. One-up or random is applied to customerOrderNumber only on
-        Re-Submit.
+        {activeTab === 'modify'
+          ? 'RUN prepares a PUT Order Modify curl from Datadog RequestPayload without posting. Edit below, then Re-Submit.'
+          : 'RUN prepares a v6 Order Create curl (converting from v2 when needed) without posting. Edit below, then Re-Submit. One-up or random is applied to customerOrderNumber only on Re-Submit.'}
       </p>
       {orderTypeHint ? (
         <div
@@ -106,7 +146,11 @@ export function CurlEditor({
         onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
         disabled={loading}
-        placeholder="Curl will appear here after RUN prepares a v6 request…"
+        placeholder={
+          activeTab === 'modify'
+            ? 'Order Modify curl will appear here after RUN…'
+            : 'Curl will appear here after RUN prepares a v6 request…'
+        }
         rows={16}
       />
       {httpResponse ? (

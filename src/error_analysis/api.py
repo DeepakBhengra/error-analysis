@@ -18,6 +18,7 @@ from error_analysis.config import Settings, get_settings
 from error_analysis.datadog.client import DatadogClient
 from error_analysis.datadog.errors import DatadogError
 from error_analysis.datadog.fetch_request import (
+    fetch_modify_request_records,
     fetch_request_records,
     resolve_service_filter,
 )
@@ -27,6 +28,12 @@ from error_analysis.order_create.curl_builder import (
     OrderCreateCurl,
     OrderCreateCurlError,
     build_order_create_curl_from_records,
+)
+from error_analysis.order_modify.modify_curl_builder import (
+    OrderModifyCurl,
+    OrderModifyCurlError,
+    build_order_modify_curl_from_records,
+    normalize_order_modify_target,
 )
 from error_analysis.error_lookup.client import (
     ErrorLookupError,
@@ -127,6 +134,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 Mode = Literal["one_up", "random"]
 Target = Literal["uat", "qa"]
+ModifyTarget = Literal["test", "qa1"]
 
 
 class RunRequest(BaseModel):
@@ -152,6 +160,20 @@ class OrderRequestPreview(BaseModel):
     index: int = 0
     env: str | None = None
     target: Target = "uat"
+
+    model_config = {"populate_by_name": True}
+
+
+class OrderModifyRequestPreview(BaseModel):
+    """Fetch + build editable Order Modify curl (PUT, no HTTP)."""
+
+    text: str = Field(..., min_length=1)
+    from_time: str | None = Field(default=None, alias="from")
+    to_time: str | None = Field(default=None, alias="to")
+    index: int = 0
+    env: str | None = None
+    target: ModifyTarget = "test"
+    order_id: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -186,7 +208,12 @@ class SettingsUpdateRequest(BaseModel):
     order_create_username: str | None = None
     order_create_password: str | None = None
     order_create_cookie: str | None = None
+    order_modify_test_username: str | None = None
+    order_modify_test_password: str | None = None
+    order_modify_qa1_username: str | None = None
+    order_modify_qa1_password: str | None = None
     default_target: Target | None = None
+    default_modify_target: ModifyTarget | None = None
     default_mode: Mode | None = None
 
 
@@ -200,12 +227,37 @@ def _normalize_mode(value: str) -> Mode:
     return "random" if cleaned == "random" else "one_up"
 
 
+def _normalize_modify_target(value: str) -> ModifyTarget:
+    cleaned = (value or "test").strip().lower()
+    return "qa1" if cleaned == "qa1" else "test"
+
+
+def _modify_credentials(settings: Settings, target: ModifyTarget) -> tuple[str, str]:
+    if target == "qa1":
+        return settings.order_modify_qa1_username, settings.order_modify_qa1_password
+    return settings.order_modify_test_username, settings.order_modify_test_password
+
+
+def _merge_records_by_log_id(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        for record in group:
+            log_id = str(record.get("log_id") or "")
+            if log_id and log_id not in merged:
+                merged[log_id] = record
+            elif not log_id:
+                merged[f"anon-{len(merged)}"] = record
+    return list(merged.values())
+
+
 def _settings_response(settings: Settings) -> dict[str, Any]:
     dd_api_configured = bool(settings.dd_api_key.strip())
     dd_app_configured = bool(settings.dd_app_key.strip())
     dd_access_token_configured = bool(settings.dd_access_token.strip())
     password_configured = bool(settings.order_create_password.strip())
     cookie_configured = bool(settings.order_create_cookie.strip())
+    modify_test_password_configured = bool(settings.order_modify_test_password.strip())
+    modify_qa1_password_configured = bool(settings.order_modify_qa1_password.strip())
     return {
         "dd_api_key": "",
         "dd_app_key": "",
@@ -220,7 +272,16 @@ def _settings_response(settings: Settings) -> dict[str, Any]:
         "order_create_cookie": "",
         "order_create_password_configured": password_configured,
         "order_create_cookie_configured": cookie_configured,
+        "order_modify_test_username": settings.order_modify_test_username,
+        "order_modify_test_password": "",
+        "order_modify_qa1_username": settings.order_modify_qa1_username,
+        "order_modify_qa1_password": "",
+        "order_modify_test_password_configured": modify_test_password_configured,
+        "order_modify_qa1_password_configured": modify_qa1_password_configured,
         "default_target": _normalize_target(settings.default_order_create_target),
+        "default_modify_target": _normalize_modify_target(
+            settings.default_order_modify_target
+        ),
         "default_mode": _normalize_mode(settings.default_replay_mode),
     }
 
@@ -449,8 +510,26 @@ def update_app_settings(payload: SettingsUpdateRequest) -> dict[str, Any]:
         updates["ORDER_CREATE_PASSWORD"] = payload.order_create_password.strip()
     if payload.order_create_cookie is not None and payload.order_create_cookie.strip():
         updates["ORDER_CREATE_COOKIE"] = payload.order_create_cookie.strip()
+    if payload.order_modify_test_username is not None:
+        updates["ORDER_MODIFY_TEST_USERNAME"] = payload.order_modify_test_username.strip()
+    if (
+        payload.order_modify_test_password is not None
+        and payload.order_modify_test_password.strip()
+    ):
+        updates["ORDER_MODIFY_TEST_PASSWORD"] = payload.order_modify_test_password.strip()
+    if payload.order_modify_qa1_username is not None:
+        updates["ORDER_MODIFY_QA1_USERNAME"] = payload.order_modify_qa1_username.strip()
+    if (
+        payload.order_modify_qa1_password is not None
+        and payload.order_modify_qa1_password.strip()
+    ):
+        updates["ORDER_MODIFY_QA1_PASSWORD"] = payload.order_modify_qa1_password.strip()
     if payload.default_target is not None:
         updates["DEFAULT_ORDER_CREATE_TARGET"] = _normalize_target(payload.default_target)
+    if payload.default_modify_target is not None:
+        updates["DEFAULT_ORDER_MODIFY_TARGET"] = _normalize_modify_target(
+            payload.default_modify_target
+        )
     if payload.default_mode is not None:
         updates["DEFAULT_REPLAY_MODE"] = _normalize_mode(payload.default_mode)
 
@@ -566,6 +645,119 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
         "query": fetched.query,
         "recordCount": len(fetched.records),
         "target": payload.target,
+    }
+
+
+def _modify_preview_message(built: OrderModifyCurl, *, text: str) -> str:
+    order_number = ""
+    if isinstance(built.body.get("customerOrderNumber"), str):
+        order_number = built.body["customerOrderNumber"].strip()
+    return (
+        f"Order Modify PUT request ready for {order_number or text!r} "
+        f"(order id {built.order_id}, target {built.target}). "
+        "Edit the curl, then Re-Submit."
+    )
+
+
+@app.post("/api/order-modify-request")
+def order_modify_request_preview(payload: OrderModifyRequestPreview) -> dict[str, Any]:
+    """Search Datadog and return an editable Order Modify PUT curl (no HTTP)."""
+    settings = _load_settings()
+    text = payload.text.strip()
+    search_from = payload.from_time
+    search_to = payload.to_time
+    if not search_from or not search_to:
+        search_from, search_to = default_search_window(30)
+
+    modify_target = _normalize_modify_target(payload.target)
+    username, password = _modify_credentials(settings, modify_target)
+    if not username.strip():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"ORDER_MODIFY_{modify_target.upper()}_USERNAME is required in "
+                "settings for order-modify preview."
+            ),
+        )
+
+    modify_service = settings.default_modify_services
+    create_service = resolve_service_filter(settings)
+    try:
+        with DatadogClient(settings) as client:
+            modify_fetched = fetch_modify_request_records(
+                client,
+                settings,
+                from_time=search_from,
+                to_time=search_to,
+                text=text,
+                env=payload.env,
+                service=modify_service,
+            )
+            create_fetched = fetch_request_records(
+                client,
+                settings,
+                from_time=search_from,
+                to_time=search_to,
+                text=text,
+                env=payload.env,
+                service=create_service,
+            )
+    except ValueError as exc:
+        logger.warning("order-modify-request invalid input: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DatadogError as exc:
+        logger.error("order-modify-request Datadog fetch failed for %r: %s", text, exc)
+        raise HTTPException(
+            status_code=502, detail=f"Datadog fetch failed: {exc}"
+        ) from exc
+
+    records = _merge_records_by_log_id(modify_fetched.records, create_fetched.records)
+    if not records:
+        logger.warning(
+            "order-modify-request found no records for %r (query=%s)",
+            text,
+            modify_fetched.query,
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No Order Modify request records found for {text!r}. "
+                f"Query used: {modify_fetched.query}"
+            ),
+        )
+
+    try:
+        built = build_order_modify_curl_from_records(
+            records,
+            username=username,
+            password=password,
+            redact_password=False,
+            index=payload.index,
+            cookie=settings.order_create_cookie or None,
+            target=modify_target,
+            order_id=payload.order_id,
+        )
+    except OrderModifyCurlError as exc:
+        logger.warning("order-modify-request curl build failed for %r: %s", text, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    order_number = ""
+    if isinstance(built.body.get("customerOrderNumber"), str):
+        order_number = built.body["customerOrderNumber"].strip()
+
+    return {
+        "outcome": "READY",
+        "message": _modify_preview_message(built, text=text),
+        "curl": built.curl,
+        "body": built.body,
+        "customerOrderNumber": order_number,
+        "originalCustomerOrderNumber": order_number,
+        "sourceSearchText": text,
+        "url": built.url,
+        "orderId": built.order_id,
+        "query": modify_fetched.query,
+        "recordCount": len(records),
+        "target": modify_target,
     }
 
 
