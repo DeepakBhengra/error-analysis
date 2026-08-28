@@ -105,7 +105,7 @@ def fetch_request_records(
         )
 
     return FetchRequestResult(
-        records=records,
+        records=results,
         query=query,
         total_logs=total_logs,
         missing_payload=missing_payload,
