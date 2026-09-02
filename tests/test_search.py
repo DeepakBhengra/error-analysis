@@ -47,3 +47,25 @@ def test_search_logs_pagination(httpx_mock, settings: Settings):
     second_request = httpx_mock.get_requests()[1]
     body = json.loads(second_request.content)
     assert body["page"]["cursor"] == "cursor-page-2"
+
+
+def test_search_logs_stops_early_before_next_page(httpx_mock, settings: Settings):
+    page1 = json.loads((FIXTURES / "search_page_1.json").read_text())
+
+    httpx_mock.add_response(json=page1)
+
+    params = LogSearchParams(
+        filter=LogSearchFilter(
+            query='"G0D82"',
+            **{"from": "2026-07-08T00:00:00Z", "to": "2026-07-08T01:00:00Z"},
+        ),
+        page_limit=50,
+    )
+
+    with DatadogClient(settings) as client:
+        events = list(
+            search_logs(client, params, should_stop=lambda _last_page: True)
+        )
+
+    assert len(events) == 1
+    assert len(httpx_mock.get_requests()) == 1

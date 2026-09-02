@@ -535,6 +535,38 @@ def find_order_create_records(records: list[dict[str, Any]]) -> list[dict[str, A
     return [record for record in records if is_convertible_v2_body_record(record)]
 
 
+def should_stop_order_create_fetch(
+    records: list[dict[str, Any]],
+    index: int,
+    *,
+    last_page: bool,
+) -> bool:
+    """Return True when ``records`` are enough to build curl at ``index``.
+
+    Portal v6 bodies may be superseded by prod v6 on a later page, so stop only
+    on the last page unless a higher-priority prod or v2 body is already present.
+    """
+    body_candidates = find_order_create_records(records)
+    if len(body_candidates) <= index:
+        return False
+
+    body_record = body_candidates[index]
+    if is_prod_v6_body_record(body_record):
+        return (
+            find_any_v2_header_record(records) is not None
+            or find_async_header_record(records) is not None
+        )
+    if is_v6_body_record(body_record):
+        if find_v2_header_record(records) is None:
+            return False
+        return last_page
+    if is_mapped_v2_body_record(body_record) or is_convertible_v2_body_record(
+        body_record
+    ):
+        return True
+    return False
+
+
 def _record_correlation_id(record: dict[str, Any] | None) -> str | None:
     """CorrelationId captured from the log XML wrapper (e.g. <pfx5:CorrelationId>)."""
     if not isinstance(record, dict):

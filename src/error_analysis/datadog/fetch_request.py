@@ -14,6 +14,8 @@ from error_analysis.extractors.hermes_request import (
 )
 from error_analysis.extractors.modify_request import extract_modify_request
 from error_analysis.extractors.request_log_payload import extract_correlation_id
+from error_analysis.order_create.curl_builder import should_stop_order_create_fetch
+from error_analysis.order_modify.modify_curl_builder import should_stop_order_modify_fetch
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,7 @@ def fetch_request_records(
     env: str | None = None,
     service: str | list[str] | None = None,
     limit: int | None = None,
+    early_stop_index: int | None = None,
 ) -> FetchRequestResult:
     """Search Datadog and extract Hermes request/response records."""
     query = build_checkout_query(
@@ -78,7 +81,14 @@ def fetch_request_records(
     request_count = 0
     response_count = 0
 
-    for event in search_logs(client, params):
+    def _should_stop(last_page: bool) -> bool:
+        if early_stop_index is None:
+            return False
+        return should_stop_order_create_fetch(
+            results, early_stop_index, last_page=last_page
+        )
+
+    for event in search_logs(client, params, should_stop=_should_stop):
         total_logs += 1
         request, response = extract_log_payloads(event)
         if request is None and response is None:
@@ -127,6 +137,7 @@ def fetch_modify_request_records(
     env: str | None = None,
     service: str | list[str] | None = None,
     limit: int | None = None,
+    early_stop_index: int | None = None,
 ) -> FetchRequestResult:
     """Search Datadog and extract Order Modify RequestPayload records."""
     modify_service = service
@@ -157,7 +168,14 @@ def fetch_modify_request_records(
     request_count = 0
     response_count = 0
 
-    for event in search_logs(client, params):
+    def _should_stop(last_page: bool) -> bool:
+        if early_stop_index is None:
+            return False
+        return should_stop_order_modify_fetch(
+            results, early_stop_index, last_page=last_page
+        )
+
+    for event in search_logs(client, params, should_stop=_should_stop):
         total_logs += 1
         request = extract_modify_request(event)
         _, response = extract_log_payloads(event)

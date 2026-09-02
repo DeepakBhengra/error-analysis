@@ -592,6 +592,7 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
                 text=text,
                 env=payload.env,
                 service=service,
+                early_stop_index=payload.index,
             )
     except ValueError as exc:
         logger.warning("order-request invalid input: %s", exc)
@@ -692,6 +693,7 @@ def order_modify_request_preview(payload: OrderModifyRequestPreview) -> dict[str
                 text=text,
                 env=payload.env,
                 service=modify_service,
+                early_stop_index=payload.index,
             )
             create_fetched = fetch_request_records(
                 client,
