@@ -575,6 +575,54 @@ body {
   color: var(--accent-dark);
 }
 
+.status-error-rate-limit {
+  position: relative;
+}
+
+.status-error-rate-limit-trigger {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.status-error-rate-limit-popover {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(420px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid var(--failed-border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  line-height: 1.45;
+}
+
+.status-error-rate-limit:hover .status-error-rate-limit-popover,
+.status-error-rate-limit:focus-within .status-error-rate-limit-popover {
+  display: block;
+}
+
+.status-error-rate-limit-popover-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.status-error-rate-limit-popover-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.status-error-rate-limit-popover-list li + li {
+  margin-top: 6px;
+}
+
 .table-wrap {
   background: var(--bg-card);
   border: 1px solid var(--border);
