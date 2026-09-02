@@ -190,10 +190,19 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints (http://127.0.0.1:5173, or the next free port such as **5174**).
-Vite proxies `/api` to the Order Replay API on port 8010.
+By default the UI runs at **http://127.0.0.1:5173** (Vite uses the next free port if 5173 is busy).
+To use a different host or port, copy `web/.env.example` to `web/.env.local` and set for example:
+
+```bash
+VITE_DEV_HOST=127.0.0.1
+VITE_DEV_PORT=3000
+```
+
+Or pass CLI flags once: `npm run dev -- --host 127.0.0.1 --port 3000`.
+
+Vite proxies `/api` to the Order Replay API on port 8010 (`VITE_API_PROXY_TARGET` overrides the proxy URL).
 If the API is not already running, `npm run dev` auto-starts `error-analysis-api` from `.venv`.
-Restart `npm run dev` after changing `vite.config.ts` so the proxy target updates.
+Restart `npm run dev` after changing `web/.env.local` or `vite.config.ts`.
 
 **VS Code:** Terminal → Run Task… → **Error Analysis: API + UI** (starts both).
 Or just `npm run dev` in `web/` — the Vite plugin starts the API when needed.
