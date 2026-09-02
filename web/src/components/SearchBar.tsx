@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 
+import { DateRangePicker } from './DateRangePicker'
 import type { CurlType } from '../types'
 
 interface SearchBarProps {
@@ -115,24 +116,13 @@ export function SearchBar({
         </button>
       </div>
       <div className="controls-row">
-        <label className="control-field">
-          <span>From</span>
-          <input
-            type="datetime-local"
-            value={from}
-            onChange={(e) => onFromChange(e.target.value)}
-            disabled={loading}
-          />
-        </label>
-        <label className="control-field">
-          <span>To</span>
-          <input
-            type="datetime-local"
-            value={to}
-            onChange={(e) => onToChange(e.target.value)}
-            disabled={loading}
-          />
-        </label>
+        <DateRangePicker
+          from={from}
+          to={to}
+          disabled={loading}
+          onFromChange={onFromChange}
+          onToChange={onToChange}
+        />
       </div>
     </form>
   )
