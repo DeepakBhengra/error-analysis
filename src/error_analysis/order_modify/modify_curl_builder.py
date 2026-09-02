@@ -304,6 +304,24 @@ def find_modify_body_records(records: list[dict[str, Any]]) -> list[dict[str, An
     return [record for record in records if is_modify_body_record(record)]
 
 
+def should_stop_order_modify_fetch(
+    records: list[dict[str, Any]],
+    index: int,
+    *,
+    last_page: bool,
+) -> bool:
+    """Return True when ``records`` contain enough data to build modify curl."""
+    del last_page  # modify stop does not depend on pagination position
+    body_candidates = find_modify_body_records(records)
+    if len(body_candidates) <= index:
+        return False
+    try:
+        _resolve_order_id(records, body_candidates[index])
+    except OrderModifyCurlError:
+        return False
+    return True
+
+
 def build_order_modify_curl(
     record: dict[str, Any],
     *,

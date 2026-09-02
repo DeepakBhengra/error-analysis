@@ -159,32 +159,26 @@ export default function App() {
         signal: controller.signal,
       }
 
-      const tasks: Promise<void>[] = []
       const messages: string[] = []
 
       if (wantsCreate) {
-        tasks.push(
-          fetchOrderRequest({ ...searchParams, target }).then((data) => {
-            setCreateCurl(data.curl || '')
-            setPreviewSource(data.source)
-            messages.push(data.message)
-          }),
-        )
+        const data = await fetchOrderRequest({ ...searchParams, target })
+        setCreateCurl(data.curl || '')
+        setPreviewSource(data.source)
+        messages.push(data.message)
       }
 
       if (wantsModify) {
-        tasks.push(
-          fetchOrderModifyRequest({ ...searchParams, target: modifyTarget }).then((data) => {
-            setModifyCurl(data.curl || '')
-            messages.push(data.message)
-            if (!wantsCreate) {
-              setPreviewSource(null)
-            }
-          }),
-        )
+        const data = await fetchOrderModifyRequest({
+          ...searchParams,
+          target: modifyTarget,
+        })
+        setModifyCurl(data.curl || '')
+        messages.push(data.message)
+        if (!wantsCreate) {
+          setPreviewSource(null)
+        }
       }
-
-      await Promise.all(tasks)
 
       if (wantsModify && !wantsCreate) {
         setCurlPanelTab('modify')

@@ -8,6 +8,7 @@ from error_analysis.order_modify.modify_curl_builder import (
     build_order_modify_curl_from_records,
     format_order_modify_curl,
     resolve_order_modify_url,
+    should_stop_order_modify_fetch,
 )
 
 
@@ -164,3 +165,13 @@ def test_build_order_modify_accepts_explicit_order_id():
     )
     assert built.target == "qa1"
     assert "api-qa1.ingrammicro.com" in built.url
+
+
+def test_should_stop_order_modify_fetch_when_body_and_order_id_ready():
+    records = [_sample_modify_body(), _sample_create_response()]
+    assert should_stop_order_modify_fetch(records, 0, last_page=False) is True
+
+
+def test_should_stop_order_modify_fetch_waits_for_order_id():
+    records = [_sample_modify_body(), _sample_v2_header()]
+    assert should_stop_order_modify_fetch(records, 0, last_page=False) is False
