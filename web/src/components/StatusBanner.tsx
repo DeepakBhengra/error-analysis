@@ -21,7 +21,7 @@ export function StatusBanner({
     const text =
       loadingKind === 'submit'
         ? 'Submitting Order Create and waiting for response…'
-        : 'Searching Datadog and preparing Order Create v6 request…'
+        : 'Searching DataDog and preparing request curl..'
     return (
       <div className="status-banner status-loading" role="status">
         {text}
