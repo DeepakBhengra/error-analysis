@@ -355,6 +355,143 @@ body {
   font-size: 12px;
 }
 
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.date-range-picker {
+  position: relative;
+  width: min(100%, 320px);
+}
+
+.date-range-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.date-range-trigger:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.date-range-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.date-range-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-range-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 280px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.date-range-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.date-range-month {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.date-range-nav {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.date-range-nav:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.date-range-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.date-range-weekdays,
+.date-range-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.date-range-weekdays span {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2px 0 4px;
+}
+
+.date-range-day {
+  height: 30px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.date-range-day.empty {
+  pointer-events: none;
+}
+
+.date-range-day:hover:not(.empty) {
+  background: #e3f2fd;
+}
+
+.date-range-day.in-range {
+  background: #e8f4fd;
+}
+
+.date-range-day.range-start,
+.date-range-day.range-end {
+  background: var(--accent);
+  color: #fff;
+}
+
 .search-controls {
   display: flex;
   flex-wrap: wrap;
