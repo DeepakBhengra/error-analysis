@@ -32,7 +32,12 @@ def is_order_modify_body(payload: Any) -> bool:
         return False
     if not isinstance(payload.get("customerOrderNumber"), str):
         return False
+    if not payload["customerOrderNumber"].strip():
+        return False
     lines = payload.get("lines")
+    if lines is None:
+        # Attribute-only modify requests (no line changes) omit lines entirely.
+        return True
     return isinstance(lines, list)
 
 

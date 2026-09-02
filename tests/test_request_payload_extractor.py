@@ -50,3 +50,18 @@ def test_extract_modify_request_from_service_log():
     payload = extract_modify_request(event)
     assert payload["customerOrderNumber"] == "PO1"
     assert payload["lines"][0]["ingramPartNumber"] == "X"
+
+
+def test_extract_modify_request_without_lines_array():
+    message = (
+        '<pfx5:RequestLogPayload>OrderNumber:- 10-D80G5-11RequestPayload:- '
+        '{"customerOrderNumber":"PO32907","additionalAttributes":'
+        '[{"attributeName":"orderdate","attributeValue":"2026-09-01"}]}'
+        "</pfx5:RequestLogPayload>"
+    )
+    event = {"attributes": {"message": message, "service": "OrderModify_v6_0"}}
+    payload = extract_modify_request(event)
+    assert payload is not None
+    assert payload["customerOrderNumber"] == "PO32907"
+    assert "lines" not in payload
+    assert payload["additionalAttributes"][0]["attributeName"] == "orderdate"
