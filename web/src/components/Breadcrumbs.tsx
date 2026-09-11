@@ -21,7 +21,7 @@ export function Breadcrumbs({ timestamp, view = 'home' }: BreadcrumbsProps) {
             <span className="crumb-sep" aria-hidden>
               /
             </span>
-            <span className="crumb-current">Order Replay</span>
+            <span className="crumb-current">Order Re-Build</span>
           </>
         )}
       </nav>

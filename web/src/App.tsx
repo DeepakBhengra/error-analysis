@@ -372,8 +372,7 @@ export default function App() {
       ) : (
         <div className="order-replay-page">
           <PageHeader
-            badge="ORDER REPLAY"
-            title="Order Replay"
+            badge="ORDER RE-BUILD"
             subtitle="Search Datadog checkout logs, prepare Order Create and Order Modify curls, and replay requests."
           />
           <MetricCards
