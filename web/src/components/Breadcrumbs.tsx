@@ -7,21 +7,27 @@ interface BreadcrumbsProps {
 
 export function Breadcrumbs({ timestamp, view = 'home' }: BreadcrumbsProps) {
   return (
-    <div className="page-header">
+    <div className="top-bar">
       <nav className="breadcrumbs" aria-label="Breadcrumb">
-        <span>Home</span>
-        <span className="crumb-sep">&gt;</span>
+        <span className="crumb">Home</span>
+        <span className="crumb-sep" aria-hidden>
+          /
+        </span>
         {view === 'settings' ? (
           <span className="crumb-current">Settings</span>
         ) : (
           <>
-            <span>Error Analysis</span>
-            <span className="crumb-sep">&gt;</span>
+            <span className="crumb">Error Analysis</span>
+            <span className="crumb-sep" aria-hidden>
+              /
+            </span>
             <span className="crumb-current">Order Replay</span>
           </>
         )}
       </nav>
-      <div className="header-meta">{timestamp}</div>
+      <time className="header-meta" dateTime={timestamp}>
+        {timestamp}
+      </time>
     </div>
   )
 }

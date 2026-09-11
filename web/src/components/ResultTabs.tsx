@@ -16,12 +16,12 @@ export function ResultTabs({
   onChange,
 }: ResultTabsProps) {
   return (
-    <div className="result-tabs" role="tablist">
+    <div className="result-tabs detail-tabs" role="tablist">
       <button
         type="button"
         role="tab"
         aria-selected={tab === 'all'}
-        className={tab === 'all' ? 'tab active' : 'tab'}
+        className={tab === 'all' ? 'detail-tab active' : 'detail-tab'}
         onClick={() => onChange('all')}
       >
         All Results <span className="tab-badge">{allCount}</span>
@@ -30,7 +30,7 @@ export function ResultTabs({
         type="button"
         role="tab"
         aria-selected={tab === 'success'}
-        className={tab === 'success' ? 'tab active' : 'tab'}
+        className={tab === 'success' ? 'detail-tab active' : 'detail-tab'}
         onClick={() => onChange('success')}
       >
         Success <span className="tab-badge">{successCount}</span>
@@ -39,7 +39,7 @@ export function ResultTabs({
         type="button"
         role="tab"
         aria-selected={tab === 'failed'}
-        className={tab === 'failed' ? 'tab active' : 'tab'}
+        className={tab === 'failed' ? 'detail-tab active' : 'detail-tab'}
         onClick={() => onChange('failed')}
       >
         Failed <span className="tab-badge">{failedCount}</span>
