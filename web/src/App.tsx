@@ -17,6 +17,7 @@ import { Breadcrumbs } from './components/Breadcrumbs'
 import { CurlEditor } from './components/CurlEditor'
 import { ErrorCodeModal } from './components/ErrorCodeModal'
 import { MetricCards } from './components/MetricCards'
+import { PageHeader } from './components/PageHeader'
 import { ResultTabs } from './components/ResultTabs'
 import { ResultsTable } from './components/ResultsTable'
 import { SearchBar } from './components/SearchBar'
@@ -352,57 +353,73 @@ export default function App() {
     <AppShell view={view} onNavigate={setView}>
       <Breadcrumbs timestamp={timestamp} view={view} />
       {view === 'settings' ? (
-        <SettingsPage
-          onSaved={({ mode: nextMode, target: nextTarget, modifyTarget: nextModifyTarget }) => {
-            setMode(nextMode)
-            setTarget(nextTarget)
-            setModifyTarget(nextModifyTarget)
-          }}
-        />
+        <div className="order-replay-page">
+          <PageHeader
+            badge="SETTINGS"
+            title="Application Settings"
+            subtitle="Configure Datadog credentials, Order Create replay targets, and Order Modify authentication."
+          />
+          <div className="page-card settings-card">
+            <SettingsPage
+              onSaved={({ mode: nextMode, target: nextTarget, modifyTarget: nextModifyTarget }) => {
+                setMode(nextMode)
+                setTarget(nextTarget)
+                setModifyTarget(nextModifyTarget)
+              }}
+            />
+          </div>
+        </div>
       ) : (
-        <>
+        <div className="order-replay-page">
+          <PageHeader
+            badge="ORDER REPLAY"
+            title="Order Replay"
+            subtitle="Search Datadog checkout logs, prepare Order Create and Order Modify curls, and replay requests."
+          />
           <MetricCards
             runs={results.length}
             success={successCount}
             failed={failedCount}
             impulseOrder={latestImpulse}
           />
-          <ResultTabs
-            tab={tab}
-            allCount={results.length}
-            successCount={successCount}
-            failedCount={failedCount}
-            onChange={setTab}
-          />
-          <SearchBar
-            query={query}
-            from={from}
-            to={to}
-            curlTypes={curlTypes}
-            loading={loading}
-            canCancel={loadingKind === 'preview'}
-            onQueryChange={setQuery}
-            onFromChange={setFrom}
-            onToChange={setTo}
-            onCurlTypesChange={setCurlTypes}
-            onRun={handleRun}
-            onCancel={handleCancel}
-            onRefresh={handleRefresh}
-          />
-          <StatusBanner
-            outcome={bannerOutcome}
-            message={bannerMessage}
-            loading={loading}
-            loadingKind={loadingKind}
-            error={error}
-            previewSource={previewSource}
-          />
-          <ResultsTable
-            rows={filtered}
-            onErrorCodeClick={handleErrorCodeClick}
-            onResolveClick={handleResolveClick}
-            resolvingCode={lookupLoading ? lookupCode : null}
-          />
+          <div className="page-card">
+            <ResultTabs
+              tab={tab}
+              allCount={results.length}
+              successCount={successCount}
+              failedCount={failedCount}
+              onChange={setTab}
+            />
+            <SearchBar
+              query={query}
+              from={from}
+              to={to}
+              curlTypes={curlTypes}
+              loading={loading}
+              canCancel={loadingKind === 'preview'}
+              onQueryChange={setQuery}
+              onFromChange={setFrom}
+              onToChange={setTo}
+              onCurlTypesChange={setCurlTypes}
+              onRun={handleRun}
+              onCancel={handleCancel}
+              onRefresh={handleRefresh}
+            />
+            <StatusBanner
+              outcome={bannerOutcome}
+              message={bannerMessage}
+              loading={loading}
+              loadingKind={loadingKind}
+              error={error}
+              previewSource={previewSource}
+            />
+            <ResultsTable
+              rows={filtered}
+              onErrorCodeClick={handleErrorCodeClick}
+              onResolveClick={handleResolveClick}
+              resolvingCode={lookupLoading ? lookupCode : null}
+            />
+          </div>
           <ErrorCodeModal
             open={lookupOpen}
             errorCode={lookupCode}
@@ -426,7 +443,7 @@ export default function App() {
             onResubmit={handleResubmit}
             onCancel={handleCancel}
           />
-        </>
+        </div>
       )}
     </AppShell>
   )

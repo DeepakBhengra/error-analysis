@@ -66,12 +66,12 @@ export function CurlEditor({
   const panelTitle = activeTab === 'modify' ? 'Order Modify Curl' : 'Order Create Curl'
 
   return (
-    <section className="curl-panel">
-      <div className="curl-panel-tabs">
+    <section className="curl-panel page-card">
+      <div className="detail-tabs" role="tablist" aria-label="Curl type">
         {showCreateTab ? (
           <button
             type="button"
-            className={`curl-panel-tab${activeTab === 'create' ? ' active' : ''}`}
+            className={`detail-tab${activeTab === 'create' ? ' active' : ''}`}
             onClick={() => onTabChange('create')}
           >
             Order Create curl
@@ -80,19 +80,29 @@ export function CurlEditor({
         {showModifyTab ? (
           <button
             type="button"
-            className={`curl-panel-tab${activeTab === 'modify' ? ' active' : ''}`}
+            className={`detail-tab${activeTab === 'modify' ? ' active' : ''}`}
             onClick={() => onTabChange('modify')}
           >
             Order Modify curl
           </button>
         ) : null}
       </div>
-      <div className="curl-panel-header">
-        <h2>{panelTitle}</h2>
+      <div className="detail-section-header">
+        <div className="detail-section-title-wrap">
+          <span className="detail-section-icon" aria-hidden>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z" />
+            </svg>
+          </span>
+          <div>
+            <h2 className="detail-section-title">{panelTitle}</h2>
+            <p className="detail-section-meta">Request curl editor</p>
+          </div>
+        </div>
         <div className="curl-panel-actions">
           <button
             type="button"
-            className="btn-outline-primary"
+            className="btn-primary"
             onClick={onResubmit}
             disabled={loading || !curl.trim()}
           >
