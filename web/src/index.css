@@ -154,6 +154,10 @@ body {
   line-height: 1.5;
 }
 
+.page-subtitle-after-badge {
+  margin-top: 10px;
+}
+
 .summary-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
