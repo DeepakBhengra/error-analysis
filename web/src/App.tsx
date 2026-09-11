@@ -6,6 +6,7 @@ import {
   fetchOrderRequest,
   fetchSettings,
   isAbortError,
+  isMissingCurlResultError,
   lookupErrorCode,
   resolveErrorCode,
   resubmitCurl,
@@ -160,34 +161,69 @@ export default function App() {
       }
 
       const messages: string[] = []
+      const skipped: string[] = []
+      let createFound = false
+      let modifyFound = false
 
       if (wantsCreate) {
-        const data = await fetchOrderRequest({ ...searchParams, target })
-        setCreateCurl(data.curl || '')
-        setPreviewSource(data.source)
-        messages.push(data.message)
-      }
-
-      if (wantsModify) {
-        const data = await fetchOrderModifyRequest({
-          ...searchParams,
-          target: modifyTarget,
-        })
-        setModifyCurl(data.curl || '')
-        messages.push(data.message)
-        if (!wantsCreate) {
-          setPreviewSource(null)
+        try {
+          const data = await fetchOrderRequest({ ...searchParams, target })
+          setCreateCurl(data.curl || '')
+          setPreviewSource(data.source)
+          messages.push(data.message)
+          createFound = Boolean(data.curl?.trim())
+        } catch (err) {
+          if (isAbortError(err)) throw err
+          if (wantsModify && isMissingCurlResultError(err)) {
+            setCreateCurl('')
+            skipped.push(`Order Create curl: ${err instanceof ApiError ? err.message : String(err)}`)
+          } else {
+            throw err
+          }
         }
       }
 
-      if (wantsModify && !wantsCreate) {
+      if (wantsModify) {
+        try {
+          const data = await fetchOrderModifyRequest({
+            ...searchParams,
+            target: modifyTarget,
+          })
+          setModifyCurl(data.curl || '')
+          messages.push(data.message)
+          modifyFound = Boolean(data.curl?.trim())
+          if (!wantsCreate) {
+            setPreviewSource(null)
+          }
+        } catch (err) {
+          if (isAbortError(err)) throw err
+          if (wantsCreate && isMissingCurlResultError(err)) {
+            setModifyCurl('')
+            skipped.push(`Order Modify curl: ${err instanceof ApiError ? err.message : String(err)}`)
+          } else {
+            throw err
+          }
+        }
+      }
+
+      const hasAnyResult = createFound || modifyFound
+      if (!hasAnyResult) {
+        const detail = [...skipped, ...messages].filter(Boolean).join(' ')
+        throw new ApiError(
+          404,
+          detail || 'No Order Create or Order Modify curl records found for this search.',
+        )
+      }
+
+      if (modifyFound && !createFound) {
         setCurlPanelTab('modify')
-      } else if (wantsCreate) {
+      } else if (createFound) {
         setCurlPanelTab('create')
       }
 
+      const bannerParts = [...messages, ...skipped]
       setBannerOutcome('READY')
-      setBannerMessage(messages.join(' '))
+      setBannerMessage(bannerParts.join(' '))
       setError(null)
     } catch (err) {
       if (isAbortError(err)) {

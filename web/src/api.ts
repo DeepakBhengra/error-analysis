@@ -27,6 +27,16 @@ export function isAbortError(err: unknown): boolean {
   )
 }
 
+/** True when the API found no matching curl records (not auth, rate limit, etc.). */
+export function isMissingCurlResultError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false
+  if (err.status === 404) return true
+  if (err.status !== 400) return false
+  return /no order (create|modify)|requestpayload body found|body record found|not found for/i.test(
+    err.message,
+  )
+}
+
 async function parseError(res: Response): Promise<string> {
   try {
     const data = (await res.json()) as { detail?: string | { msg?: string }[] }
