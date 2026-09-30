@@ -9,8 +9,12 @@ Fetch Hermes Order Simulate request JSON from Datadog checkout logs (US5).
 ```bash
 python -m venv .venv
 .venv\Scripts\activate   # Windows
-pip install -e ".[dev]"
+pip install -r requirements.txt
 ```
+
+`requirements.txt` installs runtime, web, and test dependencies, plus this
+package in editable mode. Equivalent extras from `pyproject.toml`:
+`pip install -e ".[web,dev]"`.
 
 2. Copy `.env.example` to `.env` and set your Datadog credentials (one of):
 
@@ -157,7 +161,8 @@ error-analysis fetch --url "https://us5.datadoghq.com/logs?query=..."
 React UI (COBOL Scanner–style layout) plus FastAPI backend that wraps
 `replay-order` (Datadog search → Order Create replay → SUCCESS/FAILED).
 
-1. Install API deps (from the project root, with venv active):
+1. Install API deps (from the project root, with venv active).
+   Skip this if you already ran `pip install -r requirements.txt`:
 
 ```bash
 pip install -e ".[web]"
@@ -241,7 +246,7 @@ Build the UI once, then launch API + UI from a single process on port **8010**:
 Double-click **`Start Error Analysis.bat`** (or run `.\start-prod.ps1`).  
 Opens http://127.0.0.1:8010 — leave the console window open; Ctrl+C to stop.
 
-Requires `.venv` with `pip install -e ".[web]"`, Node.js for the build step, and a configured `.env`.
+Requires `.venv` with `pip install -r requirements.txt` (or `pip install -e ".[web]"`), Node.js for the build step, and a configured `.env`.
 
 UI flow:
 
