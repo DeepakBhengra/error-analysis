@@ -435,9 +435,10 @@ and the FastAPI order-request endpoint (`pytest-httpx` mocks outbound HTTP). Run
 ## 13. Running Locally
 
 ```bash
-# 1. Install (backend + web extra)
+# 1. Install (backend + web + tests)
 python -m venv .venv && .venv\Scripts\activate
-pip install -e ".[dev,web]"
+pip install -r requirements.txt
+# equivalent: pip install -e ".[web,dev]"
 
 # 2. Configure credentials
 copy .env.example .env   # set DD_API_KEY / DD_APP_KEY / ORDER_CREATE_* / LOOKUP_*
