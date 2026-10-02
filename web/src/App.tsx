@@ -263,9 +263,17 @@ export default function App() {
     setLoadingKind('submit')
     setError(null)
     try {
+      let replayMode: ReplayMode = mode
+      try {
+        const settings = await fetchSettings(controller.signal)
+        replayMode = settings.default_mode === 'random' ? 'random' : 'one_up'
+        setMode(replayMode)
+      } catch {
+        /* keep in-memory mode if settings cannot be loaded */
+      }
       const data = await resubmitCurl({
         curl: activeCurl,
-        mode,
+        mode: replayMode,
         signal: controller.signal,
       })
       applySubmitResponse(data)

@@ -7,6 +7,7 @@ from error_analysis.order_create.order_number import (
     MAX_CUSTOMER_ORDER_NUMBER_LENGTH,
     apply_order_number,
     bump_trailing_number,
+    customer_order_number_from_body,
     random_order_number,
     resolve_replay_order_number,
 )
@@ -28,6 +29,10 @@ def test_bump_trailing_number():
     assert bump_trailing_number("TEST011") == "TEST012"
     assert bump_trailing_number("TEST099") == "TEST100"
     assert bump_trailing_number("NODIGITS") == "NODIGITS1"
+    eighteen = "ABCDEFGHIJKLMNOPQR"
+    bumped = bump_trailing_number(eighteen)
+    assert len(bumped) == MAX_CUSTOMER_ORDER_NUMBER_LENGTH
+    assert bumped != eighteen
 
 
 def test_random_order_number_uses_prefix():
@@ -62,11 +67,27 @@ def test_resolve_replay_order_number():
 
 
 def test_resolve_replay_clamps_one_up_to_18():
-    # Appending "1" would exceed 18; result must still be clamped.
+    # Appending "1" would exceed 18; result must still be clamped AND change.
     original = "MP-103923L10401876EX"  # 20 chars, no trailing digits
     bumped = resolve_replay_order_number(original)
     assert len(bumped) <= MAX_CUSTOMER_ORDER_NUMBER_LENGTH
-    assert bumped == "MP-103923L10401876EX1"[:MAX_CUSTOMER_ORDER_NUMBER_LENGTH]
+    assert bumped != original
+    assert bumped != original[:MAX_CUSTOMER_ORDER_NUMBER_LENGTH]
+
+
+def test_one_up_changes_short_po_from_curl():
+    assert resolve_replay_order_number("P27951376") == "P27951377"
+    assert len(resolve_replay_order_number("P27951376")) <= 18
+
+
+def test_customer_order_number_from_body_ignores_casing():
+    assert customer_order_number_from_body({"customerOrderNumber": "P27951376"}) == (
+        "P27951376"
+    )
+    assert customer_order_number_from_body({"CustomerOrderNumber": 27951376}) == (
+        "27951376"
+    )
+    assert customer_order_number_from_body({"notes": "x"}) == ""
 
 
 def test_apply_order_number():

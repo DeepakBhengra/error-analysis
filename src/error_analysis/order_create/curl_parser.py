@@ -12,7 +12,7 @@ _LOCATION_RE = re.compile(
     r"""curl\s+--location\s+(?:'([^']*)'|"([^"]*)")""",
     re.IGNORECASE,
 )
-_DATA_RAW_START_RE = re.compile(r"""--data-raw\s+'""")
+_DATA_RAW_START_RE = re.compile(r"""--data(?:-raw)?\s+(?P<q>['"])""", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -34,10 +34,10 @@ def _extract_data_raw(curl_text: str) -> str:
     match = _DATA_RAW_START_RE.search(curl_text)
     if not match:
         raise OrderCreateCurlError("Curl is missing --data-raw payload.")
+    quote = match.group("q")
     start = match.end()
-    # Body is single-quoted JSON; find the closing quote that ends --data-raw.
-    # The formatter emits: --data-raw '{ ... }'
-    end = curl_text.rfind("'")
+    # Body is quoted JSON; find the closing quote that ends --data / --data-raw.
+    end = curl_text.rfind(quote)
     if end <= start:
         raise OrderCreateCurlError("Curl --data-raw payload is not closed.")
     return curl_text[start:end]
