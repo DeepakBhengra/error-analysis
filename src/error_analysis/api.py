@@ -471,6 +471,8 @@ def _api_response(
         "unresolvedFields": unresolved_fields,
         "repairMessage": repair_message,
         "result": summary,
+        "orrorhReport": summary.get("orrorhReport") or result.orrorh_report or "",
+        "orrorhFields": summary.get("orrorhFields") or [],
     }
     payload.update(extras)
     return payload

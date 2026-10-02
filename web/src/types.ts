@@ -25,6 +25,8 @@ export interface ReplayApiResponse {
   unresolvedFields?: string[]
   repairMessage?: string
   result?: Record<string, unknown>
+  orrorhReport?: string
+  orrorhFields?: Array<{ name: string; value: string }>
 }
 
 export interface CurlHttpResponse {
@@ -34,6 +36,7 @@ export interface CurlHttpResponse {
   repairedFields: string[]
   unresolvedFields: string[]
   repairMessage: string
+  orrorhReport?: string
 }
 
 export interface OrderRequestPreviewResponse {
