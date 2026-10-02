@@ -8,7 +8,7 @@ from typing import Any
 
 _TRAILING_DIGITS = re.compile(r"^(.*?)(\d+)$")
 _STEM_CHARS = re.compile(r"[A-Za-z]+")
-MAX_CUSTOMER_ORDER_NUMBER_LENGTH = 20
+MAX_CUSTOMER_ORDER_NUMBER_LENGTH = 18
 _RANDOM_ALPHABET = string.ascii_uppercase + string.digits
 
 
@@ -52,7 +52,7 @@ def random_order_number(
     *,
     max_length: int = MAX_CUSTOMER_ORDER_NUMBER_LENGTH,
 ) -> str:
-    """Build a random order number that never exceeds ``max_length`` (default 20).
+    """Build a random order number that never exceeds ``max_length`` (default 18).
 
     Uses a short alphabetic stem from the original (at most 4 letters), then
     fills the rest with random A-Z/0-9 so the value cannot resemble a long
