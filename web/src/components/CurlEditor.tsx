@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { guessOrderTypeFromCurl } from '../guessOrderType'
-import type { CurlHttpResponse, CurlPanelTab } from '../types'
+import type { CurlHttpResponse, CurlPanelTab, OrrorhField } from '../types'
 import { CopyButton } from './CopyButton'
+import { Orrorh88Popup } from './Orrorh88Popup'
 
 interface CurlEditorProps {
   activeTab: CurlPanelTab
@@ -15,6 +16,7 @@ interface CurlEditorProps {
   canCancel?: boolean
   httpResponse?: CurlHttpResponse | null
   substationLogs?: string
+  substationFields?: OrrorhField[]
   onCreateChange: (value: string) => void
   onModifyChange: (value: string) => void
   onResubmit: () => void
@@ -37,6 +39,19 @@ function formatHttpBody(body: unknown): string {
   }
 }
 
+function resolveSubstationFields(
+  fields: OrrorhField[],
+  report: string,
+): OrrorhField[] {
+  if (fields.length) return fields
+  const parsed: OrrorhField[] = []
+  for (const line of report.split('\n')) {
+    const match = line.match(/^\d+\.\s+(ORRORH-[A-Z0-9-]+)\s+=\s+(.*)$/)
+    if (match) parsed.push({ name: match[1], value: match[2] })
+  }
+  return parsed
+}
+
 export function CurlEditor({
   activeTab,
   onTabChange,
@@ -48,11 +63,13 @@ export function CurlEditor({
   canCancel = false,
   httpResponse = null,
   substationLogs = '',
+  substationFields = [],
   onCreateChange,
   onModifyChange,
   onResubmit,
   onCancel,
 }: CurlEditorProps) {
+  const [conditionField, setConditionField] = useState<OrrorhField | null>(null)
   const curl = activeTab === 'modify' ? modifyCurl : createCurl
   const onChange = activeTab === 'modify' ? onModifyChange : onCreateChange
 
@@ -64,6 +81,10 @@ export function CurlEditor({
   const orderTypeHint = useMemo(
     () => (activeTab === 'create' ? guessOrderTypeFromCurl(createCurl) : null),
     [activeTab, createCurl],
+  )
+  const resolvedFields = useMemo(
+    () => resolveSubstationFields(substationFields, substationLogs),
+    [substationFields, substationLogs],
   )
 
   const panelTitle = activeTab === 'modify' ? 'Order Modify Curl' : 'Order Create Curl'
@@ -225,18 +246,46 @@ export function CurlEditor({
           <p className="curl-hint">
             ORRORH copybook fields from the OrderUpdate Substation Request for this
             customer PO. Empty tags are Spaces. ORRORD-DETAIL-ELEMENTS is ignored.
+            Click a highlighted field to view its 88 condition-names.
           </p>
           <div className="copyable-panel">
-            <pre className="curl-response-body curl-orrorh-body">
-              {substationLogs.trim()
-                ? substationLogs
-                : 'No Substation Request found for this customer PO.'}
-            </pre>
+            {substationLogs.trim() ? (
+              <ol className="curl-response-body curl-orrorh-body orrorh-field-list">
+                {resolvedFields.map((field, index) => {
+                  const clickable = Boolean(
+                    field.conditions?.length && field.value.trim() && field.value !== 'Spaces',
+                  )
+                  return (
+                    <li key={`${index}-${field.name}`} className="orrorh-field-row">
+                      <span className="orrorh-field-index">{index + 1}.</span>
+                      {clickable ? (
+                        <button
+                          type="button"
+                          className="orrorh-field-link"
+                          onClick={() => setConditionField(field)}
+                        >
+                          {field.name}
+                        </button>
+                      ) : (
+                        <span className="orrorh-field-name">{field.name}</span>
+                      )}
+                      <span className="orrorh-field-eq"> = </span>
+                      <span className="orrorh-field-value">{field.value}</span>
+                    </li>
+                  )
+                })}
+              </ol>
+            ) : (
+              <pre className="curl-response-body curl-orrorh-body">
+                No Substation Request found for this customer PO.
+              </pre>
+            )}
             <CopyButton
               text={substationLogs}
               label="Copy Substation Logs"
             />
           </div>
+          <Orrorh88Popup field={conditionField} onClose={() => setConditionField(null)} />
         </div>
       ) : null}
     </section>

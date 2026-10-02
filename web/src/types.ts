@@ -1,3 +1,15 @@
+export interface OrrorhCondition {
+  name: string
+  values: string[]
+  matched: boolean
+}
+
+export interface OrrorhField {
+  name: string
+  value: string
+  conditions?: OrrorhCondition[]
+}
+
 export type ReplayMode = 'one_up' | 'random'
 export type OrderCreateTarget = 'uat' | 'qa'
 export type OrderModifyTarget = 'test' | 'qa1'
@@ -26,7 +38,7 @@ export interface ReplayApiResponse {
   repairMessage?: string
   result?: Record<string, unknown>
   orrorhReport?: string
-  orrorhFields?: Array<{ name: string; value: string }>
+  orrorhFields?: OrrorhField[]
 }
 
 export interface CurlHttpResponse {
@@ -51,7 +63,7 @@ export interface OrderRequestPreviewResponse {
   query?: string
   recordCount?: number
   orrorhReport?: string
-  orrorhFields?: Array<{ name: string; value: string }>
+  orrorhFields?: OrrorhField[]
 }
 
 export interface OrderModifyPreviewResponse {

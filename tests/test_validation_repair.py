@@ -1157,7 +1157,6 @@ def test_resubmit_includes_orrorh_substation_report(monkeypatch):
     assert "ORRORH-CUSTOMER-BR = 30" in data["orrorhReport"]
     assert "ORRORH-CREDIT-CARD-NO = Spaces" in data["orrorhReport"]
     assert "ORRORD-DETAIL-ELEMENTS" not in data["orrorhReport"]
-    assert data["orrorhFields"][0] == {
-        "name": "ORRORH-REQUEST-FUNCTION",
-        "value": "OR",
-    }
+    assert data["orrorhFields"][0]["name"] == "ORRORH-REQUEST-FUNCTION"
+    assert data["orrorhFields"][0]["value"] == "OR"
+    assert data["orrorhFields"][0]["conditions"][0]["name"] == "ORRORH-CREATE-ORDER"

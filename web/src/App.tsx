@@ -35,6 +35,7 @@ import type {
   ReplayMode,
   SessionResult,
   TabFilter,
+  OrrorhField,
 } from './types'
 
 const windowDefaults = defaultSearchWindow()
@@ -59,6 +60,7 @@ export default function App() {
   const [modifyCurl, setModifyCurl] = useState('')
   const [httpResponse, setHttpResponse] = useState<CurlHttpResponse | null>(null)
   const [substationLogs, setSubstationLogs] = useState('')
+  const [substationFields, setSubstationFields] = useState<OrrorhField[]>([])
   const [previewSource, setPreviewSource] = useState<OrderRequestSource | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingKind, setLoadingKind] = useState<'preview' | 'submit' | null>(null)
@@ -119,6 +121,7 @@ export default function App() {
       repairMessage: data.repairMessage ?? '',
     })
     setSubstationLogs(data.orrorhReport ?? '')
+    setSubstationFields(data.orrorhFields ?? [])
     setBannerOutcome(data.outcome)
     setBannerMessage(data.message)
     setError(null)
@@ -147,9 +150,9 @@ export default function App() {
     setError(null)
     setBannerOutcome(null)
     setBannerMessage('')
-    setPreviewSource(null)
     setHttpResponse(null)
     setSubstationLogs('')
+    setSubstationFields([])
 
     const wantsCreate = curlTypes.includes('create')
     const wantsModify = curlTypes.includes('modify')
@@ -175,6 +178,7 @@ export default function App() {
           setCreateCurl(data.curl || '')
           setPreviewSource(data.source)
           setSubstationLogs(data.orrorhReport || '')
+          setSubstationFields(data.orrorhFields || [])
           messages.push(data.message)
           createFound = Boolean(data.curl?.trim())
         } catch (err) {
@@ -182,6 +186,7 @@ export default function App() {
           if (wantsModify && isMissingCurlResultError(err)) {
             setCreateCurl('')
             setSubstationLogs('')
+            setSubstationFields([])
             skipped.push(`Order Create curl: ${err instanceof ApiError ? err.message : String(err)}`)
           } else {
             throw err
@@ -309,6 +314,7 @@ export default function App() {
     setModifyCurl('')
     setHttpResponse(null)
     setSubstationLogs('')
+    setSubstationFields([])
     setPreviewSource(null)
     setError(null)
     setBannerOutcome(null)
@@ -456,6 +462,7 @@ export default function App() {
             canCancel={loadingKind === 'submit'}
             httpResponse={httpResponse}
             substationLogs={substationLogs}
+            substationFields={substationFields}
             onCreateChange={setCreateCurl}
             onModifyChange={setModifyCurl}
             onResubmit={handleResubmit}

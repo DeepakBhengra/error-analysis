@@ -14,6 +14,8 @@ from error_analysis.order_create.orrorh_report import (
     is_order_update_substation_event,
     lookup_orrorh_from_events,
     orrorh_copybook_fields,
+    orrorh_copybook_model,
+    parse_orrorh_copybook,
     parse_orrorh_fields,
     parse_orrorh_xml_values,
     report_from_substation_xml,
@@ -51,6 +53,16 @@ COPYBOOK_SNIPPET = """\
                15 ORRORH-SHIP-TO-PHONE           PIC X(15).
      05  ORRORH-FILLER-AREA             PIC X(10).
      05  ORRORH-CREDIT-CARD-NO         PIC X(20).
+     05  ORRORH-BCK-BACKORDER-FLAG       PIC X(01).
+         88 ORRORH-BCK-VALID-BO-FLAG     VALUE 'Y' 'N' 'C' 'P'    ROR10293
+                                               'E' 'B'.           ROR10293
+         88 ORRORH-BCK-ALLOW-BACKORDERS             VALUE 'Y'.
+         88 ORRORH-BCK-NO-BACKORDERS                VALUE 'N'.
+         88 ORRORH-BCK-SHIP-COMPLETE     VALUE 'C' 'E' 'B'.
+         88 ORRORH-BCK-SHIP-CONSOLIDATED            VALUE 'B'.
+         88 ORRORH-BCK-FILL-COMPLETE                VALUE 'P'.
+     05  ORRORH-SS-SPLIT-SHIP-FLAG       PIC X(01).
+         88 ORRORH-SS-SPLIT-SHIP-VALID         VALUE 'Y', 'N'.
 """
 
 
@@ -60,10 +72,55 @@ def test_parse_orrorh_fields_starts_at_request_function():
     assert "ORRORH-CUSTOMER-BR" in names
     assert "ORRORH-SHIP-TO-PHONE" in names
     assert "ORRORH-CREDIT-CARD-NO" in names
+    assert "ORRORH-BCK-BACKORDER-FLAG" in names
     assert "ORRORH-CREATE-ORDER" not in names
+    assert "ORRORH-BCK-ALLOW-BACKORDERS" not in names
     assert "ORRORH-SHIP-TO-ADDRESS-5" not in names
     assert "ORRORH-FILLER-AREA" not in names
     assert "ORRORH-ORDER-REQUEST" not in names
+
+
+def test_parse_88_conditions_attach_to_parent_pic():
+    model = {field.name: field for field in parse_orrorh_copybook(COPYBOOK_SNIPPET)}
+    create = model["ORRORH-REQUEST-FUNCTION"]
+    assert create.conditions[0].name == "ORRORH-CREATE-ORDER"
+    assert create.conditions[0].values == ("OR",)
+
+    flag = model["ORRORH-BCK-BACKORDER-FLAG"]
+    names = [item.name for item in flag.conditions]
+    assert names == [
+        "ORRORH-BCK-VALID-BO-FLAG",
+        "ORRORH-BCK-ALLOW-BACKORDERS",
+        "ORRORH-BCK-NO-BACKORDERS",
+        "ORRORH-BCK-SHIP-COMPLETE",
+        "ORRORH-BCK-SHIP-CONSOLIDATED",
+        "ORRORH-BCK-FILL-COMPLETE",
+    ]
+    by_name = {item.name: item.values for item in flag.conditions}
+    assert by_name["ORRORH-BCK-VALID-BO-FLAG"] == ("Y", "N", "C", "P", "E", "B")
+    assert by_name["ORRORH-BCK-ALLOW-BACKORDERS"] == ("Y",)
+    assert by_name["ORRORH-BCK-SHIP-COMPLETE"] == ("C", "E", "B")
+    assert model["ORRORH-CUSTOMER-BR"].conditions == ()
+
+
+def test_packaged_copybook_backorder_flag_has_88s():
+    model = {field.name: field for field in orrorh_copybook_model()}
+    flag = model["ORRORH-BCK-BACKORDER-FLAG"]
+    assert [item.name for item in flag.conditions] == [
+        "ORRORH-BCK-VALID-BO-FLAG",
+        "ORRORH-BCK-ALLOW-BACKORDERS",
+        "ORRORH-BCK-NO-BACKORDERS",
+        "ORRORH-BCK-SHIP-COMPLETE",
+        "ORRORH-BCK-SHIP-CONSOLIDATED",
+        "ORRORH-BCK-FILL-COMPLETE",
+    ]
+    assert flag.conditions[0].values == ("Y", "N", "C", "P", "E", "B")
+    split = model["ORRORH-SS-SPLIT-SHIP-FLAG"]
+    assert [item.name for item in split.conditions] == [
+        "ORRORH-SS-SPLIT-SHIP-VALID",
+        "ORRORH-SS-SPLIT-ORDER",
+        "ORRORH-SS-DO-NOT-SPLIT-ORDER",
+    ]
 
 
 def test_packaged_copybook_starts_with_request_function():
@@ -121,6 +178,35 @@ def test_full_copybook_report_ignores_detail_elements():
     assert "ORRORH-CREDIT-CARD-NO = Spaces" in report.report
     assert "ORRORD-DETAIL-ELEMENTS" not in report.report
     assert "CLORC HEADER" not in report.report
+    function = report.fields[0]
+    assert function["name"] == "ORRORH-REQUEST-FUNCTION"
+    assert function["value"] == "OR"
+    assert function["conditions"][0]["name"] == "ORRORH-CREATE-ORDER"
+    assert function["conditions"][0]["values"] == ["OR"]
+    assert function["conditions"][0]["matched"] is True
+
+
+def test_backorder_flag_conditions_match_current_value():
+    xml = """
+    <ns0:SSOrderEntryRequest>
+        <ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>
+        <ORRORH-BCK-BACKORDER-FLAG>Y</ORRORH-BCK-BACKORDER-FLAG>
+        <ORRORH-SS-SPLIT-SHIP-FLAG>Y</ORRORH-SS-SPLIT-SHIP-FLAG>
+    </ns0:SSOrderEntryRequest>
+    """
+    report = report_from_substation_xml(xml)
+    flag = next(item for item in report.fields if item["name"] == "ORRORH-BCK-BACKORDER-FLAG")
+    assert flag["value"] == "Y"
+    by_name = {item["name"]: item for item in flag["conditions"]}
+    assert by_name["ORRORH-BCK-ALLOW-BACKORDERS"]["matched"] is True
+    assert by_name["ORRORH-BCK-NO-BACKORDERS"]["matched"] is False
+    assert by_name["ORRORH-BCK-VALID-BO-FLAG"]["matched"] is True
+    assert by_name["ORRORH-BCK-SHIP-COMPLETE"]["matched"] is False
+    spaces = next(
+        item for item in report.fields if item["name"] == "ORRORH-CUSTOMER-BR"
+    )
+    assert spaces["value"] == SPACES_VALUE
+    assert "conditions" not in spaces
 
 
 def test_identify_v2_and_substation_events():
