@@ -1,11 +1,15 @@
 """ORRORH copybook vs OrderUpdate Substation Request report."""
 
+from error_analysis.config import Settings
 from error_analysis.order_create.orrorh_report import (
     COPYBOOK_START_FIELD,
     SPACES_VALUE,
+    SUBSTATION_LOG_DESCRIPTION,
     build_orrorh_report_lines,
+    build_substation_search_query,
     extract_substation_xml,
     extract_substation_xml_from_event,
+    fetch_orrorh_lookup,
     is_order_create_v2_event,
     is_order_update_substation_event,
     lookup_orrorh_from_events,
@@ -153,3 +157,174 @@ def test_identify_v2_and_substation_events():
     assert result.source_log_id == "upd-1"
     assert result.report.startswith("1. ORRORH-REQUEST-FUNCTION = OR")
     assert "2. ORRORH-CUSTOMER-BR = 30" in result.report
+
+
+TIBCO_MESSAGE_P27951376 = (
+    "<ns0:DateTimestamp>2026-10-02T01:00:43.463-07:00</ns0:DateTimestamp>"
+    "<ns0:ServiceName>OrderUpdate_Service_root</ns0:ServiceName>"
+    "<ns0:LogType>INFO</ns0:LogType>"
+    "<ns0:CorrelationId>P279513762026-10-02T01:00:43.459-07:00</ns0:CorrelationId>"
+    "<ns0:LogDescription>OrderCreateCallSubstationRequest</ns0:LogDescription>"
+    "<ns0:CountryCode>MD</ns0:CountryCode>"
+    "<ns0:JobID>2922719</ns0:JobID>"
+    "<ns0:CustomerNumber>30-395650</ns0:CustomerNumber>"
+    "<ns0:ServerName>uschleai2004</ns0:ServerName>"
+    "<ns0:RequestLogPayload>Substation Request: {&#xD;"
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<ns0:SSOrderEntryRequest xmlns:ns0="http://www.ingrammicro.com/SSOrderEntryRequest">'
+    "<ORRORH-PAYMENT-CODE/>"
+    "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+    "<ORRORH-CUSTOMER-BR>30</ORRORH-CUSTOMER-BR>"
+    "<ORRORH-CUSTOMER-NBR>395650</ORRORH-CUSTOMER-NBR>"
+    "<ORRORH-COUNTRY-CODE>MD</ORRORH-COUNTRY-CODE>"
+    "<ORRORH-CUST-TO-ING-PO-NBR>P27951376</ORRORH-CUST-TO-ING-PO-NBR>"
+    "<ORRORH-CUST-TO-CUST-PO-NBR>P27951376</ORRORH-CUST-TO-CUST-PO-NBR>"
+    "<ORRORD-DETAIL-ELEMENTS>HUGE DETAIL TRUNCATED BY DATADOG"
+)
+
+
+def _screenshot_substation_event() -> dict:
+    """Datadog shape from PO P27951376: XML in message, no service facet."""
+    return {
+        "id": "upd-p27951376",
+        "attributes": {
+            "host": "uschleai2004",
+            "message": TIBCO_MESSAGE_P27951376,
+        },
+    }
+
+
+def test_substation_query_does_not_phrase_quote_po_and_description():
+    query = build_substation_search_query(
+        "P27951376",
+        extra_terms=SUBSTATION_LOG_DESCRIPTION,
+        service=None,
+    )
+    assert query == "P27951376 OrderCreateCallSubstationRequest"
+    assert '"P27951376 OrderCreateCallSubstationRequest"' not in query
+
+
+def test_substation_query_quotes_only_spaced_po():
+    query = build_substation_search_query(
+        "115669/2026 MI PB",
+        extra_terms=SUBSTATION_LOG_DESCRIPTION,
+        service=None,
+    )
+    assert query == '"115669 2026 MI PB" OrderCreateCallSubstationRequest'
+
+
+def test_extract_substation_xml_without_close_tag():
+    xml = extract_substation_xml(TIBCO_MESSAGE_P27951376)
+    assert xml.startswith("<ns0:SSOrderEntryRequest")
+    assert "</SSOrderEntryRequest>" not in xml
+    assert "ORRORH-CUST-TO-CUST-PO-NBR>P27951376" in xml
+
+
+def test_screenshot_shaped_log_builds_substation_report():
+    event = _screenshot_substation_event()
+    assert is_order_update_substation_event(event) is True
+    xml = extract_substation_xml_from_event(event)
+    assert "P27951376" in xml
+
+    result = lookup_orrorh_from_events(
+        v2_events=[],
+        update_events=[event],
+        order_number="P27951376",
+    )
+    assert result.source_log_id == "upd-p27951376"
+    assert "ORRORH-REQUEST-FUNCTION = OR" in result.report
+    assert "ORRORH-CUSTOMER-BR = 30" in result.report
+    assert "ORRORH-CUST-TO-CUST-PO-NBR = P27951376" in result.report
+    assert "ORRORH-CUST-TO-ING-PO-NBR = P27951376" in result.report
+
+
+def test_correlation_id_prefix_matches_when_xml_omits_po():
+    event = {
+        "id": "upd-cid",
+        "attributes": {
+            "message": (
+                "<ns0:CorrelationId>P279513762026-10-02T01:00:43.459-07:00"
+                "</ns0:CorrelationId>"
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                '<ns0:SSOrderEntryRequest>'
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    result = lookup_orrorh_from_events(
+        v2_events=[],
+        update_events=[event],
+        order_number="P27951376",
+    )
+    assert result.source_log_id == "upd-cid"
+    assert "ORRORH-REQUEST-FUNCTION = OR" in result.report
+
+
+def test_fetch_orrorh_lookup_finds_screenshot_log(monkeypatch):
+    event = _screenshot_substation_event()
+    captured: list[str] = []
+
+    def fake_search_logs(_client, params, should_stop=None):
+        del should_stop
+        query = params.filter.query
+        captured.append(query)
+        if "OrderCreate_v2" in query:
+            return []
+        if (
+            "P27951376" in query
+            and SUBSTATION_LOG_DESCRIPTION in query
+            and not query.startswith('"P27951376 ')
+        ):
+            return [event]
+        return []
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.orrorh_report.search_logs",
+        fake_search_logs,
+    )
+    result = fetch_orrorh_lookup(
+        object(),  # type: ignore[arg-type]
+        Settings(DD_API_KEY="test", DD_APP_KEY="test"),
+        order_number="P27951376",
+        from_time="2026-09-01T00:00:00Z",
+        to_time="2026-10-02T12:00:00Z",
+    )
+    assert captured[0] == "P27951376 service:OrderCreate_v2*"
+    assert "P27951376 OrderCreateCallSubstationRequest" in captured
+    assert all(
+        '"P27951376 OrderCreateCallSubstationRequest"' not in query
+        for query in captured
+    )
+    assert result.source_log_id == "upd-p27951376"
+    assert "ORRORH-CUST-TO-CUST-PO-NBR = P27951376" in result.report
+
+
+def test_fetch_orrorh_lookup_wildcard_when_po_only_in_correlation_id(monkeypatch):
+    event = _screenshot_substation_event()
+    captured: list[str] = []
+
+    def fake_search_logs(_client, params, should_stop=None):
+        del should_stop
+        query = params.filter.query
+        captured.append(query)
+        if query.startswith("P27951376*") and SUBSTATION_LOG_DESCRIPTION in query:
+            return [event]
+        return []
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.orrorh_report.search_logs",
+        fake_search_logs,
+    )
+    result = fetch_orrorh_lookup(
+        object(),  # type: ignore[arg-type]
+        Settings(DD_API_KEY="test", DD_APP_KEY="test"),
+        order_number="P27951376",
+        from_time="2026-09-01T00:00:00Z",
+        to_time="2026-10-02T12:00:00Z",
+    )
+    assert "P27951376* OrderCreateCallSubstationRequest" in captured
+    assert result.source_log_id == "upd-p27951376"
+    assert "ORRORH-CUST-TO-ING-PO-NBR = P27951376" in result.report
