@@ -101,7 +101,13 @@ def orrorh_copybook_fields() -> tuple[str, ...]:
 
 
 def extract_substation_xml(text: str) -> str:
-    """Return the ``SSOrderEntryRequest`` XML from a Substation Request payload."""
+    """Return the ``SSOrderEntryRequest`` XML from a Substation Request payload.
+
+    Datadog often truncates huge ``ORRORD-DETAIL-ELEMENTS`` payloads, so the
+    closing ``</SSOrderEntryRequest>`` tag may be missing. In that case keep
+    everything from the open tag to the end of the indexed text — header
+    ``ORRORH-*`` fields still parse.
+    """
     if not text or not isinstance(text, str):
         return ""
     unescaped = html.unescape(text)
@@ -109,9 +115,9 @@ def extract_substation_xml(text: str) -> str:
     if not start:
         return ""
     end = _SS_CLOSE_RE.search(unescaped, start.start())
-    if not end:
-        return ""
-    return unescaped[start.start() : end.end()]
+    if end:
+        return unescaped[start.start() : end.end()]
+    return unescaped[start.start() :]
 
 
 def parse_orrorh_xml_values(xml_text: str) -> dict[str, str]:
@@ -168,26 +174,50 @@ class OrrorhLookupResult:
     source_log_id: str | None
 
 
+_EVENT_STRING_KEYS = (
+    "RequestLogPayload",
+    "requestLogPayload",
+    "message",
+    "content",
+    "LogDescription",
+    "ServiceName",
+    "service",
+    "CorrelationId",
+    "correlationId",
+    "correlation_id",
+)
+
+
 def _event_strings(event: dict[str, Any]) -> list[str]:
     chunks: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        text = html.unescape(value)
+        if not text.strip() or text in seen:
+            return
+        seen.add(text)
+        chunks.append(text)
+
     attributes = event.get("attributes") if isinstance(event, dict) else None
-    nested = None
-    if isinstance(attributes, dict):
-        nested = attributes.get("attributes")
+    nested = attributes.get("attributes") if isinstance(attributes, dict) else None
     for container in (nested, attributes, event):
         if not isinstance(container, dict):
             continue
-        for key in (
-            "RequestLogPayload",
-            "requestLogPayload",
-            "message",
-            "LogDescription",
-            "ServiceName",
-            "service",
-        ):
+        for key in _EVENT_STRING_KEYS:
             value = container.get(key)
-            if isinstance(value, str) and value.strip():
-                chunks.append(html.unescape(value))
+            if isinstance(value, str):
+                add(value)
+        for value in container.values():
+            if not isinstance(value, str):
+                continue
+            if (
+                "SSOrderEntryRequest" in value
+                or SUBSTATION_MARKER in value
+                or SUBSTATION_LOG_DESCRIPTION in value
+                or "ORRORH-" in value
+            ):
+                add(value)
     return chunks
 
 
@@ -232,21 +262,18 @@ def is_order_create_v2_event(event: dict[str, Any], order_number: str) -> bool:
 
 
 def is_order_update_substation_event(event: dict[str, Any]) -> bool:
-    """True for OrderUpdate_Service_root OrderCreateCallSubstationRequest logs."""
-    service = _event_service(event)
+    """True for OrderUpdate Substation Request logs.
+
+    TIBCO writes ``ServiceName`` / ``LogDescription`` inside the log XML.
+    Datadog's ``service:`` facet is often unset, so do not require it.
+    """
     text = _joined_event_text(event)
-    has_service = ORDER_UPDATE_SERVICE in service or ORDER_UPDATE_SERVICE in text
-    if not has_service:
-        named = _SERVICE_NAME_RE.search(text)
-        has_service = bool(named and ORDER_UPDATE_SERVICE in named.group(1))
-    if not has_service:
-        return False
-    if SUBSTATION_LOG_DESCRIPTION in text:
+    if SUBSTATION_LOG_DESCRIPTION in text or SUBSTATION_MARKER in text:
+        return True
+    if "SSOrderEntryRequest" in text:
         return True
     desc = _LOG_DESC_RE.search(text)
-    if desc and SUBSTATION_LOG_DESCRIPTION in desc.group(1):
-        return True
-    return SUBSTATION_MARKER in text
+    return bool(desc and SUBSTATION_LOG_DESCRIPTION in desc.group(1))
 
 
 def extract_substation_xml_from_event(event: dict[str, Any]) -> str:
@@ -262,6 +289,25 @@ def extract_substation_xml_from_event(event: dict[str, Any]) -> str:
 def xml_matches_order_number(xml_text: str, order_number: str) -> bool:
     po = (order_number or "").strip()
     return bool(po) and po in (xml_text or "")
+
+
+def event_matches_order_number(
+    event: dict[str, Any],
+    order_number: str,
+    xml_text: str = "",
+) -> bool:
+    """True when the customer PO appears in Substation XML or log text.
+
+    OrderUpdate CorrelationId concatenates PO + timestamp
+    (``P279513762026-10-02T01:00:43.459-07:00``), so a substring match on
+    the event text still hits when the XML body is truncated.
+    """
+    po = (order_number or "").strip()
+    if not po:
+        return False
+    if po in (xml_text or ""):
+        return True
+    return po in _joined_event_text(event)
 
 
 def report_from_substation_xml(xml_text: str) -> OrrorhLookupResult:
@@ -290,6 +336,32 @@ def empty_orrorh_result(*, v2_found: bool = False) -> OrrorhLookupResult:
     )
 
 
+def build_substation_search_query(
+    po: str,
+    *,
+    extra_terms: str | None = None,
+    service: str | None = None,
+) -> str:
+    """AND the PO with extra keywords without phrase-quoting the whole string.
+
+    ``build_checkout_query`` quotes multi-word ``search_text`` as one phrase.
+    ``P27951376`` and ``OrderCreateCallSubstationRequest`` are not adjacent in
+    TIBCO logs, so that phrase matches nothing.
+    """
+    query = build_checkout_query(search_text=po, service=service)
+    extra = (extra_terms or "").strip()
+    if extra:
+        return f"{query} {extra}"
+    return query
+
+
+def _can_wildcard_po(po: str) -> bool:
+    stripped = (po or "").strip()
+    if not stripped or any(ch.isspace() for ch in stripped):
+        return False
+    return not any(ch in stripped for ch in '*?"')
+
+
 def _search_events(
     client: DatadogClient,
     settings: Settings,
@@ -298,9 +370,11 @@ def _search_events(
     service: str | None,
     from_time: str,
     to_time: str,
+    extra_terms: str | None = None,
 ) -> list[dict[str, Any]]:
-    query = build_checkout_query(
-        search_text=search_text,
+    query = build_substation_search_query(
+        search_text,
+        extra_terms=extra_terms,
         service=service,
     )
     params = LogSearchParams(
@@ -328,12 +402,12 @@ def find_substation_xml(
     events: list[dict[str, Any]], order_number: str
 ) -> tuple[str, str | None]:
     for event in events:
-        if not is_order_update_substation_event(event):
-            continue
         xml = extract_substation_xml_from_event(event)
         if not xml:
             continue
-        if order_number and not xml_matches_order_number(xml, order_number):
+        if order_number and not event_matches_order_number(
+            event, order_number, xml
+        ):
             continue
         log_id = event.get("id")
         return xml, str(log_id) if log_id else None
@@ -383,33 +457,42 @@ def fetch_orrorh_lookup(
         from_time=from_time,
         to_time=to_time,
     )
-    update_events = _search_events(
-        client,
-        settings,
-        search_text=f"{po} {SUBSTATION_LOG_DESCRIPTION}",
-        service=ORDER_UPDATE_SERVICE,
-        from_time=from_time,
-        to_time=to_time,
-    )
-    result = lookup_orrorh_from_events(
-        v2_events=v2_events,
-        update_events=update_events,
-        order_number=po,
-    )
-    if result.xml:
-        return result
 
-    # Some tenants index ServiceName/LogDescription without the service facet.
-    fallback_events = _search_events(
-        client,
-        settings,
-        search_text=f"{po} {ORDER_UPDATE_SERVICE} {SUBSTATION_LOG_DESCRIPTION}",
-        service=None,
-        from_time=from_time,
-        to_time=to_time,
-    )
-    return lookup_orrorh_from_events(
-        v2_events=v2_events,
-        update_events=fallback_events,
-        order_number=po,
-    )
+    attempts: list[tuple[str, str | None, str | None]] = [
+        # Do not require service:OrderUpdate_Service_root — ServiceName is XML.
+        (po, SUBSTATION_LOG_DESCRIPTION, None),
+        (po, f'"{SUBSTATION_MARKER}"', None),
+    ]
+    if _can_wildcard_po(po):
+        # CorrelationId is PO+timestamp, e.g. P279513762026-10-02T01:00:43.459
+        attempts.append((f"{po}*", SUBSTATION_LOG_DESCRIPTION, None))
+    attempts.append((po, None, None))
+
+    update_events: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    last = empty_orrorh_result(v2_found=find_v2_event(v2_events, po) is not None)
+    for search_text, extra_terms, service in attempts:
+        batch = _search_events(
+            client,
+            settings,
+            search_text=search_text,
+            extra_terms=extra_terms,
+            service=service,
+            from_time=from_time,
+            to_time=to_time,
+        )
+        for event in batch:
+            event_id = str(event.get("id") or "")
+            key = event_id or str(id(event))
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+            update_events.append(event)
+        last = lookup_orrorh_from_events(
+            v2_events=v2_events,
+            update_events=update_events,
+            order_number=po,
+        )
+        if last.xml:
+            return last
+    return last
