@@ -148,7 +148,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
           </p>
           <div className="settings-radio-groups">
             <fieldset className="settings-radio-group">
-              <legend>Test Environment Selection</legend>
+              <legend>Order Create Environment</legend>
               <label className="mode-option">
                 <input
                   type="radio"
