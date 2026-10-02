@@ -401,9 +401,9 @@ def _api_response(
         check.globalorderid if check else ""
     )
 
+    # Always report the PO that was actually posted (one-up / random), not the
+    # original value that may appear on a matched Datadog response log.
     customer_order_number = result.customer_order_number
-    if check is not None and check.customer_order_number.strip():
-        customer_order_number = check.customer_order_number.strip()
 
     response_payload = summary.get("ResponseLogPayload")
     if response_payload is None and check is not None:
@@ -950,7 +950,7 @@ def resubmit_curl(payload: ResubmitRequest) -> dict[str, Any]:
         result = run_replay_from_curl(
             settings,
             payload.curl,
-            use_random=payload.mode == "random",
+            use_random=_normalize_mode(payload.mode) == "random",
             from_time=poll_from,
             to_time=poll_to,
             poll_interval=payload.poll_interval,

@@ -12,6 +12,7 @@ from error_analysis.api import _api_response
 from error_analysis.config import Settings
 from error_analysis.order_create.curl_parser import parse_order_create_curl
 from error_analysis.order_create.replay import ReplayResult
+from error_analysis.order_create.response_check import ResponseCheckResult
 from error_analysis.order_create.validation_repair import (
     extract_validation_fields,
     repair_order_create_curl,
@@ -430,3 +431,174 @@ def test_resubmit_success_falls_back_to_http_body_globalorderid(monkeypatch):
     data = response.json()
     assert data["outcome"] == "SUCCESS"
     assert data["globalorderid"] == "41-PBWWJ"
+
+
+_PO_CURL = """\
+curl --location 'https://example.test/resellers/v6/orders' \\
+--header 'Content-Type: application/json' \\
+--header 'Authorization: Basic QVBQSU1FQUk6c2VjcmV0' \\
+--data-raw '{
+    "customerOrderNumber": "P27951376",
+    "endCustomerOrderNumber": "P27951376",
+    "billToAddressId": "000"
+}'
+"""
+
+
+def _patch_replay_post(monkeypatch, fake_post):
+    def fake_poll(*args, **kwargs):
+        return [
+            {
+                "log_id": "v6",
+                "service": "OrderCreate_v6_0",
+                "ResponseLogPayload": {
+                    "customerOrderNumber": "P27951376",
+                    "responsepreamble": {
+                        "responsestatus": "SUCCESS",
+                        "statuscode": "200",
+                        "responsemessage": "SUCCESS",
+                    },
+                },
+            }
+        ]
+
+    class FakeDatadogClient:
+        def __init__(self, _settings):
+            pass
+
+        def __enter__(self):
+            return MagicMock()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.post_order_create",
+        fake_post,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_response_logs",
+        fake_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.DatadogClient",
+        FakeDatadogClient,
+    )
+
+
+def test_api_response_keeps_replayed_customer_order_number(repair_settings):
+    check = ResponseCheckResult(
+        outcome="SUCCESS",
+        statuscode="200",
+        responsemessage="SUCCESS",
+        errorcode="",
+        responsestatus="SUCCESS",
+        globalorderid="30-Q6HX2",
+        raw_preamble={},
+        response_payload={},
+        source_log_id="1",
+        customer_order_number="P27951376",
+    )
+    result = ReplayResult(
+        customer_order_number="P27951377",
+        original_order_number="P27951376",
+        url="https://example.test/orders",
+        http_status=200,
+        http_body={"ok": True},
+        records=[],
+        check=check,
+        summary={
+            "outcome": "SUCCESS",
+            "responsestatus": "SUCCESS",
+            "statuscode": "200",
+            "responsemessage": "SUCCESS",
+            "globalorderid": "30-Q6HX2",
+            "customerOrderNumber": "P27951377",
+            "originalCustomerOrderNumber": "P27951376",
+        },
+        outcome="SUCCESS",
+        curl=_PO_CURL.replace("P27951376", "P27951377"),
+    )
+    payload = _api_response(result, settings=repair_settings)
+    assert payload["customerOrderNumber"] == "P27951377"
+    assert payload["originalCustomerOrderNumber"] == "P27951376"
+
+
+def test_resubmit_one_up_updates_customer_and_end_po(monkeypatch):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    post_calls: list[dict] = []
+
+    def fake_post(**kwargs):
+        post_calls.append(kwargs)
+        return 200, {"ok": True}
+
+    _patch_replay_post(monkeypatch, fake_post)
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={
+            "curl": _PO_CURL,
+            "mode": "one_up",
+            "timeout": 1,
+            "poll_interval": 0.1,
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert post_calls[0]["body"]["customerOrderNumber"] == "P27951377"
+    assert post_calls[0]["body"]["endCustomerOrderNumber"] == "P27951377"
+    assert data["customerOrderNumber"] == "P27951377"
+    assert data["originalCustomerOrderNumber"] == "P27951376"
+    assert '"customerOrderNumber": "P27951377"' in data["curl"]
+    assert '"endCustomerOrderNumber": "P27951377"' in data["curl"]
+
+
+def test_resubmit_random_updates_customer_and_end_po(monkeypatch):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+    from error_analysis.order_create import order_number as order_number_mod
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+    monkeypatch.setattr(order_number_mod.random, "choices", lambda _alphabet, k: ["X"] * k)
+
+    post_calls: list[dict] = []
+
+    def fake_post(**kwargs):
+        post_calls.append(kwargs)
+        return 200, {"ok": True}
+
+    _patch_replay_post(monkeypatch, fake_post)
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={
+            "curl": _PO_CURL,
+            "mode": "random",
+            "timeout": 1,
+            "poll_interval": 0.1,
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    posted = post_calls[0]["body"]["customerOrderNumber"]
+    assert posted != "P27951376"
+    assert posted.startswith("P")
+    assert posted == post_calls[0]["body"]["endCustomerOrderNumber"]
+    assert data["customerOrderNumber"] == posted
+    assert data["originalCustomerOrderNumber"] == "P27951376"

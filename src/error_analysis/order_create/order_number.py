@@ -71,12 +71,12 @@ def random_order_number(
 
 
 def apply_order_number(body: dict[str, Any], new_number: str) -> dict[str, Any]:
-    """Deep-copy body and set customerOrderNumber / endCustomerOrderNumber when present."""
+    """Deep-copy body and set customerOrderNumber / endCustomerOrderNumber."""
     updated = copy.deepcopy(body)
-    if "customerOrderNumber" in updated:
-        updated["customerOrderNumber"] = new_number
-    if "endCustomerOrderNumber" in updated:
-        updated["endCustomerOrderNumber"] = new_number
+    updated["customerOrderNumber"] = new_number
+    for key in list(updated):
+        if key.lower() == "endcustomerordernumber":
+            updated[key] = new_number
     return updated
 
 

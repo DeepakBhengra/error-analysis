@@ -11,8 +11,6 @@ interface SettingsPageProps {
 }
 
 const emptyForm = {
-  dd_api_key: '',
-  dd_app_key: '',
   dd_access_token: '',
   dd_site: 'us5.datadoghq.com',
   order_create_username: '',
@@ -30,8 +28,6 @@ const emptyForm = {
 export function SettingsPage({ onSaved }: SettingsPageProps) {
   const [form, setForm] = useState(emptyForm)
   const [configured, setConfigured] = useState({
-    dd_api_key: false,
-    dd_app_key: false,
     dd_access_token: false,
     order_create_password: false,
     order_create_cookie: false,
@@ -63,8 +59,6 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
 
   const applySettings = (data: AppSettings) => {
     setForm({
-      dd_api_key: '',
-      dd_app_key: '',
       dd_access_token: '',
       dd_site: data.dd_site || 'us5.datadoghq.com',
       order_create_username: data.order_create_username || '',
@@ -79,8 +73,6 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
       default_mode: data.default_mode === 'random' ? 'random' : 'one_up',
     })
     setConfigured({
-      dd_api_key: data.dd_api_key_configured,
-      dd_app_key: data.dd_app_key_configured,
       dd_access_token: data.dd_access_token_configured,
       order_create_password: data.order_create_password_configured,
       order_create_cookie: data.order_create_cookie_configured,
@@ -104,8 +96,6 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         default_mode: form.default_mode,
         order_modify_test_username: form.order_modify_test_username.trim(),
         order_modify_qa1_username: form.order_modify_qa1_username.trim(),
-        ...(form.dd_api_key.trim() ? { dd_api_key: form.dd_api_key.trim() } : {}),
-        ...(form.dd_app_key.trim() ? { dd_app_key: form.dd_app_key.trim() } : {}),
         ...(form.dd_access_token.trim()
           ? { dd_access_token: form.dd_access_token.trim() }
           : {}),
@@ -152,10 +142,13 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
       <form className="settings-form" onSubmit={handleSubmit}>
         <fieldset className="settings-section" disabled={loading || saving}>
           <legend>Replay defaults</legend>
-          <p className="settings-hint">Home uses these when building and re-submitting orders.</p>
-          <div className="settings-row">
-            <fieldset className="mode-fieldset">
-              <legend className="sr-only">Order Create target</legend>
+          <p className="settings-hint">
+            Home uses these when building and re-submitting orders. Customer PO Number (One-up or
+            Random) is applied on Re-Submit.
+          </p>
+          <div className="settings-radio-groups">
+            <fieldset className="settings-radio-group">
+              <legend>Test Environment Selection</legend>
               <label className="mode-option">
                 <input
                   type="radio"
@@ -175,8 +168,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                 QA
               </label>
             </fieldset>
-            <fieldset className="mode-fieldset">
-              <legend className="sr-only">Order Modify target</legend>
+            <fieldset className="settings-radio-group">
+              <legend>Order Modify environment</legend>
               <label className="mode-option">
                 <input
                   type="radio"
@@ -200,8 +193,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                 api-qa1
               </label>
             </fieldset>
-            <fieldset className="mode-fieldset">
-              <legend className="sr-only">Order number mode</legend>
+            <fieldset className="settings-radio-group">
+              <legend>Customer PO Number</legend>
               <label className="mode-option">
                 <input
                   type="radio"
@@ -227,8 +220,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         <fieldset className="settings-section" disabled={loading || saving}>
           <legend>Datadog</legend>
           <p className="settings-hint">
-            Prefer a Personal/Service Access Token (`DD_ACCESS_TOKEN`). Classic API + App keys are
-            used only when the access token is empty.
+            Prefer a Personal/Service Access Token (`DD_ACCESS_TOKEN`). Classic API + App keys stay
+            in `.env` when the access token is empty.
           </p>
           <label className="settings-field">
             <span>DD access token</span>
@@ -242,26 +235,6 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
               }
               value={form.dd_access_token}
               onChange={(e) => setForm((prev) => ({ ...prev, dd_access_token: e.target.value }))}
-            />
-          </label>
-          <label className="settings-field">
-            <span>DD API key</span>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder={configured.dd_api_key ? 'Configured — leave blank to keep' : 'DD_API_KEY'}
-              value={form.dd_api_key}
-              onChange={(e) => setForm((prev) => ({ ...prev, dd_api_key: e.target.value }))}
-            />
-          </label>
-          <label className="settings-field">
-            <span>DD App key</span>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder={configured.dd_app_key ? 'Configured — leave blank to keep' : 'DD_APP_KEY'}
-              value={form.dd_app_key}
-              onChange={(e) => setForm((prev) => ({ ...prev, dd_app_key: e.target.value }))}
             />
           </label>
           <label className="settings-field">
