@@ -324,6 +324,10 @@ def test_resubmit_api_returns_http_body_and_repaired_curl(monkeypatch):
         fake_poll,
     )
     monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_corora_statuscode",
+        fake_poll,
+    )
+    monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
         FakeDatadogClient,
     )
@@ -640,6 +644,144 @@ def test_resubmit_rest_success_omits_numeric_ingram_when_datadog_has_no_impulse(
     assert "7109517746" not in (data["message"] or "")
     assert "Success report: SUCCESS." in data["message"]
     assert "Code: 200." in data["message"]
+
+
+def _failed_xml_records(statuscode: str, message: str) -> list[dict]:
+    xml = (
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        f"<tns:statuscode>{statuscode}</tns:statuscode>"
+        f"<tns:responsemessage>{message}</tns:responsemessage>"
+    )
+    return [{"log_id": "xml", "message": xml, "ResponseLogPayload": xml}]
+
+
+def test_resubmit_failed_uses_datadog_xml_statuscode_em(monkeypatch):
+    """HTTP 400 CUSTOMER-PO-EXISTS must show Datadog <tns:statuscode>EM, not COBOL BM."""
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    http_body = {"errors": [{"message": "CUSTOMER-PO-EXISTS"}]}
+
+    def fake_post(**kwargs):
+        return 400, http_body
+
+    def fake_corora_poll(*args, **kwargs):
+        return _failed_xml_records("EM", "CUSTOMER-PO-EXISTS")
+
+    def fail_cobol(*args, **kwargs):
+        raise AssertionError("COBOL lookup must not replace Datadog XML statuscode")
+
+    class FakeDatadogClient:
+        def __init__(self, _settings):
+            pass
+
+        def __enter__(self):
+            return MagicMock()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.post_order_create",
+        fake_post,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_corora_statuscode",
+        fake_corora_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.DatadogClient",
+        FakeDatadogClient,
+    )
+    monkeypatch.setattr(
+        "error_analysis.api.lookup_error_field",
+        fail_cobol,
+    )
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={"curl": _SAMPLE_CURL, "mode": "one_up"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["outcome"] == "FAILED"
+    assert data["statuscode"] == "EM"
+    assert data["responsemessage"] == "CUSTOMER-PO-EXISTS"
+    assert "Error Code=EM" in data["message"]
+    assert data["statuscode"] != "BM"
+    assert data["statuscode"] != "400"
+
+
+def test_resubmit_failed_uses_last_two_chars_of_lulaen(monkeypatch):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    http_body = {"errors": [{"message": "SKU-NOTFOUND    9DG827AA"}]}
+
+    def fake_post(**kwargs):
+        return 400, http_body
+
+    def fake_corora_poll(*args, **kwargs):
+        return _failed_xml_records("LULAEN", "SKU-NOTFOUND    9DG827AA")
+
+    def fail_cobol(*args, **kwargs):
+        raise AssertionError("COBOL lookup must not replace Datadog XML statuscode")
+
+    class FakeDatadogClient:
+        def __init__(self, _settings):
+            pass
+
+        def __enter__(self):
+            return MagicMock()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.post_order_create",
+        fake_post,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_corora_statuscode",
+        fake_corora_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.DatadogClient",
+        FakeDatadogClient,
+    )
+    monkeypatch.setattr(
+        "error_analysis.api.lookup_error_field",
+        fail_cobol,
+    )
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={"curl": _SAMPLE_CURL, "mode": "one_up"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["outcome"] == "FAILED"
+    assert data["statuscode"] == "EN"
+    assert "SKU-NOTFOUND" in data["responsemessage"]
+    assert "Error Code=EN" in data["message"]
+    assert data["statuscode"] != "LULAEN"
+    assert data["statuscode"] != "400"
 
 
 _PO_CURL = """\

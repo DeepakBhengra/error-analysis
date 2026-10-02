@@ -4,6 +4,7 @@ from error_analysis.api import _api_response
 from error_analysis.config import Settings
 from error_analysis.error_lookup.client import (
     ErrorLookupError,
+    corora_code_from_statuscode,
     is_two_char_error_code,
     lookup_error_code,
     lookup_error_field,
@@ -23,6 +24,20 @@ def lookup_settings() -> Settings:
         LOOKUP_RULES_PATH="C:/rules.json",
         LOOKUP_CORORA_MAPPINGS="C:/mappings",
     )
+
+
+def test_corora_code_from_statuscode():
+    assert corora_code_from_statuscode("EM") == "EM"
+    assert corora_code_from_statuscode("em") == "EM"
+    assert corora_code_from_statuscode("EN") == "EN"
+    assert corora_code_from_statuscode("D9") == "D9"
+    assert corora_code_from_statuscode("LULAEN") == "EN"
+    assert corora_code_from_statuscode("lulaen") == "EN"
+    assert corora_code_from_statuscode("400") == ""
+    assert corora_code_from_statuscode("200") == ""
+    assert corora_code_from_statuscode("406") == ""
+    assert corora_code_from_statuscode("") == ""
+    assert corora_code_from_statuscode("  ") == ""
 
 
 def test_is_two_char_error_code():
@@ -183,6 +198,74 @@ def test_api_response_maps_non_two_char_from_tns_statuscode(lookup_settings):
     assert payload["mappedFromV2Statuscode"] == "EN"
     assert "Error Code=EN" in payload["message"]
     assert "mappedFromErrorField" not in payload
+
+
+def test_api_response_maps_lulaen_xml_statuscode_to_en(lookup_settings):
+    xml = (
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        "<tns:statuscode>LULAEN</tns:statuscode>"
+        "<tns:responsemessage>SKU-NOTFOUND    9DG827AA</tns:responsemessage>"
+    )
+    result = ReplayResult(
+        customer_order_number="PO2",
+        original_order_number="PO1",
+        url="https://example.test/orders",
+        http_status=400,
+        http_body={"errors": [{"message": "SKU-NOTFOUND    9DG827AA"}]},
+        records=[{"log_id": "xml", "message": xml, "ResponseLogPayload": xml}],
+        check=None,
+        summary={
+            "outcome": "FAILED",
+            "responsestatus": "FAILED",
+            "statuscode": "400",
+            "responsemessage": "SKU-NOTFOUND    9DG827AA",
+            "globalorderid": "",
+        },
+        outcome="FAILED",
+        curl="curl ...",
+    )
+
+    payload = _api_response(result, settings=lookup_settings, source_text="PO1")
+
+    assert payload["statuscode"] == "EN"
+    assert payload["originalStatuscode"] == "400"
+    assert payload["mappedFromV2Statuscode"] == "EN"
+    assert "Error Code=EN" in payload["message"]
+    assert "mappedFromErrorField" not in payload
+
+
+def test_api_response_prefers_xml_em_over_cobol_lookup(httpx_mock, lookup_settings):
+    xml = (
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        "<tns:statuscode>EM</tns:statuscode>"
+        "<tns:responsemessage>CUSTOMER-PO-EXISTS</tns:responsemessage>"
+    )
+    result = ReplayResult(
+        customer_order_number="PO2",
+        original_order_number="PO1",
+        url="https://example.test/orders",
+        http_status=400,
+        http_body={"errors": [{"message": "CUSTOMER-PO-EXISTS"}]},
+        records=[{"log_id": "xml", "message": xml, "ResponseLogPayload": xml}],
+        check=None,
+        summary={
+            "outcome": "FAILED",
+            "responsestatus": "FAILED",
+            "statuscode": "400",
+            "responsemessage": "CUSTOMER-PO-EXISTS",
+            "globalorderid": "",
+        },
+        outcome="FAILED",
+        curl="curl ...",
+    )
+
+    payload = _api_response(result, settings=lookup_settings, source_text="PO1")
+
+    assert payload["statuscode"] == "EM"
+    assert payload["mappedFromV2Statuscode"] == "EM"
+    assert "Error Code=EM" in payload["message"]
+    assert "mappedFromErrorField" not in payload
+    assert httpx_mock.get_request() is None
 
 
 def test_api_response_maps_non_two_char_failed_statuscode(httpx_mock, lookup_settings):
