@@ -80,6 +80,15 @@ def test_apply_order_number():
     assert updated["notes"] == "keep"
 
 
+def test_apply_order_number_sets_missing_customer_and_end_keys():
+    updated = apply_order_number({"notes": "keep"}, "P27951377")
+    assert updated["customerOrderNumber"] == "P27951377"
+    assert "endCustomerOrderNumber" not in updated
+    mixed = apply_order_number({"EndCustomerOrderNumber": "OLD"}, "P27951377")
+    assert mixed["customerOrderNumber"] == "P27951377"
+    assert mixed["EndCustomerOrderNumber"] == "P27951377"
+
+
 def test_classify_preamble_success():
     assert (
         classify_preamble(

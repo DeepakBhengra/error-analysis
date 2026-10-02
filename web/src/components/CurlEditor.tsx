@@ -118,7 +118,7 @@ export function CurlEditor({
       <p className="curl-hint">
         {activeTab === 'modify'
           ? 'RUN prepares a PUT Order Modify curl from Datadog RequestPayload without posting. Edit below, then Re-Submit.'
-          : 'RUN prepares a v6 Order Create curl (converting from v2 when needed) without posting. Edit below, then Re-Submit. One-up or random is applied to customerOrderNumber only on Re-Submit.'}
+          : 'RUN prepares a v6 Order Create curl (converting from v2 when needed) without posting. Edit below, then Re-Submit. The saved Customer PO Number setting (One-up or Random) is applied to customerOrderNumber and endCustomerOrderNumber on Re-Submit.'}
       </p>
       {orderTypeHint ? (
         <div

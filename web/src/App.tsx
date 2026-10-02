@@ -263,7 +263,21 @@ export default function App() {
     setLoadingKind('submit')
     setError(null)
     try {
-      const data = await resubmitCurl({ curl: activeCurl, mode, signal: controller.signal })
+      let replayMode = mode
+      try {
+        const settings = await fetchSettings(controller.signal)
+        replayMode = settings.default_mode === 'random' ? 'random' : 'one_up'
+        setMode(replayMode)
+        setTarget(settings.default_target === 'qa' ? 'qa' : 'uat')
+        setModifyTarget(settings.default_modify_target === 'qa1' ? 'qa1' : 'test')
+      } catch (err) {
+        if (isAbortError(err)) throw err
+      }
+      const data = await resubmitCurl({
+        curl: activeCurl,
+        mode: replayMode,
+        signal: controller.signal,
+      })
       applySubmitResponse(data)
     } catch (err) {
       if (isAbortError(err)) {
@@ -357,7 +371,7 @@ export default function App() {
           <PageHeader
             badge="SETTINGS"
             title="Application Settings"
-            subtitle="Configure Datadog credentials, Order Create replay targets, and Order Modify authentication."
+            subtitle="Configure Datadog access, replay targets, and Order Modify authentication."
           />
           <div className="page-card settings-card">
             <SettingsPage
