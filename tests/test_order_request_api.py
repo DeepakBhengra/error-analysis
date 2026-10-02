@@ -96,6 +96,13 @@ def _patch_fetch(monkeypatch, records: list[dict[str, Any]]):
         "error_analysis.api.fetch_request_records",
         lambda *args, **kwargs: fetched,
     )
+    monkeypatch.setattr(
+        "error_analysis.api.fetch_orrorh_lookup",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
+    )
 
 
 def test_order_request_preview_v2_converted(preview_settings, monkeypatch):
@@ -368,3 +375,46 @@ def test_order_curl_unconfigured_api_key(monkeypatch):
         json={"customerOrderNumber": "DEEPAKDDTEST8"},
     )
     assert response.status_code == 401
+
+
+def test_order_request_preview_includes_substation_logs(preview_settings, monkeypatch):
+    from error_analysis.api import app
+    from error_analysis.order_create.orrorh_report import report_from_substation_xml
+
+    xml = """
+    <ns0:SSOrderEntryRequest xmlns:ns0="http://www.ingrammicro.com/SSOrderEntryRequest">
+        <ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>
+        <ORRORH-CUSTOMER-BR>30</ORRORH-CUSTOMER-BR>
+        <ORRORH-CREDIT-CARD-NO/>
+        <ORRORD-DETAIL-ELEMENTS>IGNORE</ORRORD-DETAIL-ELEMENTS>
+    </ns0:SSOrderEntryRequest>
+    """
+    lookup = report_from_substation_xml(xml)
+    captured: dict[str, object] = {}
+
+    def fake_lookup(_client, _settings, **kwargs):
+        captured.update(kwargs)
+        return lookup
+
+    _patch_fetch(monkeypatch, [_v2_record()])
+    monkeypatch.setattr("error_analysis.api.fetch_orrorh_lookup", fake_lookup)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/order-request",
+        json={
+            "text": "USREGTEST12",
+            "from": "2026-06-01T00:00:00Z",
+            "to": "2026-07-18T00:00:00Z",
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["curl"]
+    assert captured["order_number"] == "USREGTEST12"
+    assert captured["from_time"] == "2026-06-01T00:00:00Z"
+    assert captured["to_time"] == "2026-07-18T00:00:00Z"
+    assert data["orrorhReport"].startswith("1. ORRORH-REQUEST-FUNCTION = OR")
+    assert "ORRORH-CREDIT-CARD-NO = Spaces" in data["orrorhReport"]
+    assert "ORRORD-DETAIL-ELEMENTS" not in data["orrorhReport"]
+    assert data["orrorhFields"][0]["name"] == "ORRORH-REQUEST-FUNCTION"
