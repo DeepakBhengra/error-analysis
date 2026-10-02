@@ -557,6 +557,7 @@ def test_resubmit_one_up_updates_customer_and_end_po(monkeypatch):
     data = response.json()
     assert post_calls[0]["body"]["customerOrderNumber"] == "P27951377"
     assert post_calls[0]["body"]["endCustomerOrderNumber"] == "P27951377"
+    assert len(data["customerOrderNumber"]) <= 18
     assert data["customerOrderNumber"] == "P27951377"
     assert data["originalCustomerOrderNumber"] == "P27951376"
     assert '"customerOrderNumber": "P27951377"' in data["curl"]
@@ -599,6 +600,7 @@ def test_resubmit_random_updates_customer_and_end_po(monkeypatch):
     posted = post_calls[0]["body"]["customerOrderNumber"]
     assert posted != "P27951376"
     assert posted.startswith("P")
+    assert len(posted) <= 18
     assert posted == post_calls[0]["body"]["endCustomerOrderNumber"]
     assert data["customerOrderNumber"] == posted
     assert data["originalCustomerOrderNumber"] == "P27951376"

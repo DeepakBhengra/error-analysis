@@ -4,6 +4,7 @@ from typer.testing import CliRunner
 
 from error_analysis.cli import app
 from error_analysis.order_create.order_number import (
+    MAX_CUSTOMER_ORDER_NUMBER_LENGTH,
     apply_order_number,
     bump_trailing_number,
     random_order_number,
@@ -32,19 +33,19 @@ def test_random_order_number_uses_prefix():
     value = random_order_number(prefix="DEEPAKDDTEST11")
     assert value.startswith("DEEP")
     assert value != "DEEPAKDDTEST11"
-    assert len(value) <= 20
+    assert len(value) <= MAX_CUSTOMER_ORDER_NUMBER_LENGTH
 
 
-def test_random_order_number_max_20_chars():
+def test_random_order_number_max_18_chars():
     value = random_order_number(prefix="VERYLONGCUSTOMERORDERPREFIX999")
-    assert len(value) == 20
+    assert len(value) == MAX_CUSTOMER_ORDER_NUMBER_LENGTH
     assert value != "VERYLONGCUSTOMERORDERPREFIX999"
 
 
 def test_random_order_number_does_not_echo_long_po():
     original = "MP-103923L10401876"
     value = random_order_number(prefix=original)
-    assert len(value) <= 20
+    assert len(value) <= MAX_CUSTOMER_ORDER_NUMBER_LENGTH
     assert value.startswith("MPL")
     assert "10401876" not in value
     assert value != original
@@ -56,15 +57,15 @@ def test_resolve_replay_order_number():
     random_value = resolve_replay_order_number("A10", use_random=True)
     assert random_value.startswith("A")
     assert random_value != "A10"
-    assert len(random_value) <= 20
+    assert len(random_value) <= MAX_CUSTOMER_ORDER_NUMBER_LENGTH
 
 
-def test_resolve_replay_clamps_one_up_to_20():
-    # Appending "1" would exceed 20; result must still be clamped.
+def test_resolve_replay_clamps_one_up_to_18():
+    # Appending "1" would exceed 18; result must still be clamped.
     original = "MP-103923L10401876EX"  # 20 chars, no trailing digits
     bumped = resolve_replay_order_number(original)
-    assert len(bumped) <= 20
-    assert bumped == "MP-103923L10401876EX1"[:20]
+    assert len(bumped) <= MAX_CUSTOMER_ORDER_NUMBER_LENGTH
+    assert bumped == "MP-103923L10401876EX1"[:MAX_CUSTOMER_ORDER_NUMBER_LENGTH]
 
 
 def test_apply_order_number():
