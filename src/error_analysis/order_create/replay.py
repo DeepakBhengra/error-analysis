@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +12,8 @@ import httpx
 
 from error_analysis.config import Settings
 from error_analysis.datadog.client import DatadogClient
+from error_analysis.datadog.errors import DatadogError
+from error_analysis.logging_config import get_logger
 from error_analysis.datadog.fetch_request import (
     fetch_request_records,
     resolve_service_filter,
@@ -37,8 +39,16 @@ from error_analysis.order_create.response_check import (
     extract_globalorderid,
     find_globalorderid_in_records,
     find_response_check,
+    is_impulse_order_number,
     is_v6_response_service,
 )
+
+logger = get_logger("order_create.replay")
+
+# After a REST SUCCESS, Datadog may still hold the clubbed Impulse Order Number
+# (30-Q6HX2). Keep this short so Re-Submit stays close to Postman speed.
+IMPULSE_LOOKUP_POLL_INTERVAL = 2.0
+IMPULSE_LOOKUP_TIMEOUT = 12.0
 
 
 @dataclass(frozen=True)
@@ -185,7 +195,7 @@ def poll_response_logs(
             needs_v6 = not is_v6_response_service(check.source_service)
             # On SUCCESS the impulse order number may land in a slightly later
             # log (e.g. the v2 XML response); wait a grace window for it.
-            needs_impulse = check.outcome == "SUCCESS" and not (
+            needs_impulse = check.outcome == "SUCCESS" and not is_impulse_order_number(
                 check.globalorderid or find_globalorderid_in_records(last_records)
             )
             if not needs_two_char and not needs_v6 and not needs_impulse:
@@ -199,6 +209,95 @@ def poll_response_logs(
         elif time.monotonic() >= deadline:
             return last_records
         time.sleep(poll_interval)
+
+
+def poll_impulse_order_id(
+    client: DatadogClient,
+    settings: Settings,
+    *,
+    order_number: str,
+    from_time: str,
+    to_time: str,
+    poll_interval: float,
+    timeout: float,
+    env: str | None = None,
+) -> list[dict[str, Any]]:
+    """Poll Datadog until a clubbed Impulse Order Number appears (e.g. 30-Q6HX2)."""
+    deadline = time.monotonic() + timeout
+    last_records: list[dict[str, Any]] = []
+    service = resolve_service_filter(settings)
+
+    while True:
+        fetched = fetch_request_records(
+            client,
+            settings,
+            from_time=from_time,
+            to_time=to_time,
+            text=order_number,
+            env=env,
+            service=service,
+        )
+        last_records = fetched.records
+        if is_impulse_order_number(find_globalorderid_in_records(last_records)):
+            return last_records
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return last_records
+        time.sleep(min(poll_interval, remaining))
+
+
+def _resolve_impulse_order_id(
+    records: list[dict[str, Any]],
+    http_body: Any,
+    current: str = "",
+) -> str:
+    if is_impulse_order_number(current):
+        return str(current).strip()
+    for candidate in (
+        find_globalorderid_in_records(records),
+        extract_globalorderid(http_body),
+    ):
+        if is_impulse_order_number(candidate):
+            return candidate
+    return ""
+
+
+def _enrich_impulse_from_datadog(
+    settings: Settings,
+    *,
+    check: ResponseCheckResult,
+    order_number: str,
+    from_time: str | None,
+    to_time: str | None,
+    env: str | None,
+) -> tuple[list[dict[str, Any]], ResponseCheckResult]:
+    """Fill clubbed Impulse Order Number from Datadog after a REST SUCCESS."""
+    if is_impulse_order_number(check.globalorderid):
+        return [], check
+    try:
+        window_from, window_to = default_time_window()
+        with DatadogClient(settings) as client:
+            records = poll_impulse_order_id(
+                client,
+                settings,
+                order_number=order_number,
+                from_time=from_time or window_from,
+                to_time=to_time or window_to,
+                poll_interval=IMPULSE_LOOKUP_POLL_INTERVAL,
+                timeout=IMPULSE_LOOKUP_TIMEOUT,
+                env=env,
+            )
+    except DatadogError as exc:
+        logger.warning("Impulse order lookup skipped: %s", exc)
+        return [], check
+    except Exception as exc:
+        logger.warning("Impulse order lookup failed: %s", exc)
+        return [], check
+
+    impulse = find_globalorderid_in_records(records)
+    if is_impulse_order_number(impulse):
+        check = replace(check, globalorderid=impulse)
+    return records, check
 
 
 def _finalize_artifacts(
@@ -270,6 +369,19 @@ def _complete_replay(
         check = find_response_check(fetched_records)
     else:
         check = check_from_http_body(http_body, http_status=http_status)
+        if (
+            check is not None
+            and check.outcome == "SUCCESS"
+            and not is_impulse_order_number(check.globalorderid)
+        ):
+            fetched_records, check = _enrich_impulse_from_datadog(
+                settings,
+                check=check,
+                order_number=new_number,
+                from_time=from_time,
+                to_time=to_time,
+                env=env,
+            )
 
     if out_dir is not None:
         _write_json(out_dir / "order-create-replay-logs.json", fetched_records)
@@ -313,12 +425,13 @@ def _complete_replay(
             source_search_text=source_search_text,
         )
         summary["http_body"] = http_body
-        if not str(summary.get("globalorderid") or "").strip():
-            fallback_id = find_globalorderid_in_records(
-                fetched_records
-            ) or extract_globalorderid(http_body)
-            if fallback_id:
-                summary["globalorderid"] = fallback_id
+        impulse = _resolve_impulse_order_id(
+            fetched_records, http_body, str(summary.get("globalorderid") or "")
+        )
+        if impulse:
+            summary["globalorderid"] = impulse
+        elif not is_impulse_order_number(summary.get("globalorderid")):
+            summary["globalorderid"] = ""
         _finalize_artifacts(out_dir, summary, write_error_report=True)
         return ReplayResult(
             customer_order_number=new_number,
@@ -341,14 +454,15 @@ def _complete_replay(
             original_customer_order_number=original,
             source_search_text=source_search_text,
         )
-        # The classified log may omit the impulse order number; look in the
-        # other fetched logs, then the immediate HTTP response body.
-        if not str(summary.get("globalorderid") or "").strip():
-            fallback_id = find_globalorderid_in_records(
-                fetched_records
-            ) or extract_globalorderid(http_body)
-            if fallback_id:
-                summary["globalorderid"] = fallback_id
+        # Prefer Datadog/clubbed Impulse Order Number (30-Q6HX2) over REST
+        # numeric ingramOrderNumber (7109517746).
+        impulse = _resolve_impulse_order_id(
+            fetched_records, http_body, str(summary.get("globalorderid") or "")
+        )
+        if impulse:
+            summary["globalorderid"] = impulse
+        elif not is_impulse_order_number(summary.get("globalorderid")):
+            summary["globalorderid"] = ""
         _finalize_artifacts(out_dir, summary)
         return ReplayResult(
             customer_order_number=new_number,

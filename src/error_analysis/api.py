@@ -317,9 +317,13 @@ def _banner_message(
     impulse = summary.get("globalorderid") or ""
     if result.outcome == "SUCCESS":
         msg = summary.get("responsemessage") or "SUCCESS"
+        code = statuscode if statuscode is not None else (summary.get("statuscode") or "")
+        parts = [f"Success report: {msg}."]
+        if code:
+            parts.append(f"Code: {code}.")
         if impulse:
-            return f"Success report: {msg}. Impulse Order Number: {impulse}."
-        return f"Success report: {msg}."
+            parts.append(f"Impulse Order Number: {impulse}.")
+        return " ".join(parts)
     if result.outcome == "FAILED":
         status = summary.get("responsestatus") or "FAILED"
         code = statuscode if statuscode is not None else (summary.get("statuscode") or "")
