@@ -328,6 +328,13 @@ def test_resubmit_api_returns_http_body_and_repaired_curl(monkeypatch):
         fake_poll,
     )
     monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
+    )
+    monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
         FakeDatadogClient,
     )
@@ -417,6 +424,13 @@ def test_resubmit_success_falls_back_to_http_body_globalorderid(monkeypatch):
         fake_poll,
     )
     monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
+    )
+    monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
         FakeDatadogClient,
     )
@@ -478,6 +492,13 @@ def test_resubmit_does_not_poll_datadog(monkeypatch):
     monkeypatch.setattr(
         "error_analysis.order_create.replay.poll_response_logs",
         fake_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
     )
     monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
@@ -561,6 +582,13 @@ def test_resubmit_rest_success_shows_impulse_message_and_code(monkeypatch):
         fake_impulse_poll,
     )
     monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
+    )
+    monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
         FakeDatadogClient,
     )
@@ -624,6 +652,13 @@ def test_resubmit_rest_success_omits_numeric_ingram_when_datadog_has_no_impulse(
     monkeypatch.setattr(
         "error_analysis.order_create.replay.poll_impulse_order_id",
         fake_impulse_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
     )
     monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
@@ -697,6 +732,13 @@ def test_resubmit_failed_uses_datadog_xml_statuscode_em(monkeypatch):
         fake_corora_poll,
     )
     monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
+    )
+    monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
         FakeDatadogClient,
     )
@@ -759,6 +801,13 @@ def test_resubmit_failed_uses_last_two_chars_of_lulaen(monkeypatch):
     monkeypatch.setattr(
         "error_analysis.order_create.replay.poll_corora_statuscode",
         fake_corora_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
     )
     monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
@@ -830,6 +879,13 @@ def _patch_replay_post(monkeypatch, fake_post):
     monkeypatch.setattr(
         "error_analysis.order_create.replay.poll_response_logs",
         fake_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: __import__(
+            "error_analysis.order_create.orrorh_report",
+            fromlist=["empty_orrorh_result"],
+        ).empty_orrorh_result(),
     )
     monkeypatch.setattr(
         "error_analysis.order_create.replay.DatadogClient",
@@ -1021,3 +1077,87 @@ def test_resubmit_random_updates_customer_and_end_po(monkeypatch):
     assert posted == post_calls[0]["body"]["endCustomerOrderNumber"]
     assert data["customerOrderNumber"] == posted
     assert data["originalCustomerOrderNumber"] == "P27951376"
+
+
+def test_resubmit_includes_orrorh_substation_report(monkeypatch):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+    from error_analysis.order_create.orrorh_report import report_from_substation_xml
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    xml = """
+    <ns0:SSOrderEntryRequest xmlns:ns0="http://www.ingrammicro.com/SSOrderEntryRequest">
+        <ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>
+        <ORRORH-CUSTOMER-BR>30</ORRORH-CUSTOMER-BR>
+        <ORRORH-CREDIT-CARD-NO/>
+        <ORRORD-DETAIL-ELEMENTS>IGNORE ME</ORRORD-DETAIL-ELEMENTS>
+    </ns0:SSOrderEntryRequest>
+    """
+    lookup = report_from_substation_xml(xml)
+    lookup = lookup.__class__(
+        report=lookup.report,
+        fields=lookup.fields,
+        xml=xml,
+        v2_found=True,
+        source_log_id="upd-1",
+    )
+
+    def fake_post(**kwargs):
+        return 200, {
+            "serviceresponse": {
+                "responsepreamble": {
+                    "responsestatus": "SUCCESS",
+                    "statuscode": "200",
+                    "responsemessage": "SUCCESS",
+                },
+                "ordersummary": {
+                    "ordercreateresponse": [{"globalorderid": "30-Q6HX2"}]
+                },
+            }
+        }
+
+    class FakeDatadogClient:
+        def __init__(self, _settings):
+            raise AssertionError("poll_orrorh_report should be stubbed")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.post_order_create",
+        fake_post,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_orrorh_report",
+        lambda *args, **kwargs: lookup,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.DatadogClient",
+        FakeDatadogClient,
+    )
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={"curl": _SAMPLE_CURL, "mode": "one_up"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["outcome"] == "SUCCESS"
+    assert data["orrorhReport"].startswith("1. ORRORH-REQUEST-FUNCTION = OR")
+    assert "ORRORH-CUSTOMER-BR = 30" in data["orrorhReport"]
+    assert "ORRORH-CREDIT-CARD-NO = Spaces" in data["orrorhReport"]
+    assert "ORRORD-DETAIL-ELEMENTS" not in data["orrorhReport"]
+    assert data["orrorhFields"][0] == {
+        "name": "ORRORH-REQUEST-FUNCTION",
+        "value": "OR",
+    }

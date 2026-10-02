@@ -1302,6 +1302,27 @@ body {
   padding: 12px 14px;
 }
 
+.curl-results-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 960px) {
+  .curl-results-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  .curl-results-grid .curl-response-panel {
+    margin-top: 14px;
+  }
+}
+
+.curl-orrorh-body {
+  max-height: 420px;
+}
+
 .curl-response-header {
   display: flex;
   justify-content: space-between;

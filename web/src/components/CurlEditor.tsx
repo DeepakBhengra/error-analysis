@@ -168,6 +168,7 @@ export function CurlEditor({
         <CopyButton text={curl} label="Copy curl" />
       </div>
       {httpResponse ? (
+        <div className="curl-results-grid">
         <div className="curl-response-panel">
           <div className="curl-response-header">
             <h3>Postman / API Response</h3>
@@ -213,6 +214,25 @@ export function CurlEditor({
             </pre>
             <CopyButton text={responseText} label="Copy API response" />
           </div>
+        </div>
+        {httpResponse.orrorhReport ? (
+          <div className="curl-response-panel curl-orrorh-panel">
+            <div className="curl-response-header">
+              <h3>ORRORH Substation Report</h3>
+            </div>
+            <p className="curl-hint">
+              Copybook fields from ORRORH-REQUEST-FUNCTION mapped to OrderUpdate
+              Substation Request. Empty tags are Spaces. ORRORD-DETAIL-ELEMENTS is
+              ignored.
+            </p>
+            <div className="copyable-panel">
+              <pre className="curl-response-body curl-orrorh-body">
+                {httpResponse.orrorhReport}
+              </pre>
+              <CopyButton text={httpResponse.orrorhReport} label="Copy ORRORH report" />
+            </div>
+          </div>
+        ) : null}
         </div>
       ) : null}
     </section>

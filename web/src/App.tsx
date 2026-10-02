@@ -116,6 +116,7 @@ export default function App() {
       repairedFields: data.repairedFields ?? [],
       unresolvedFields: data.unresolvedFields ?? [],
       repairMessage: data.repairMessage ?? '',
+      orrorhReport: data.orrorhReport ?? '',
     })
     setBannerOutcome(data.outcome)
     setBannerMessage(data.message)

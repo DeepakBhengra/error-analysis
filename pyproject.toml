@@ -36,6 +36,9 @@ packages = ["src/error_analysis"]
 [tool.hatch.build.targets.wheel.sources]
 "src/error_analysis" = "error_analysis"
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/error_analysis/copybooks/ORRORH" = "error_analysis/copybooks/ORRORH"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

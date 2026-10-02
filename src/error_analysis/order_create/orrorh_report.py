@@ -1,0 +1,415 @@
+from __future__ import annotations
+
+import html
+import re
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+from error_analysis.config import Settings
+from error_analysis.datadog.client import DatadogClient
+from error_analysis.datadog.models import LogSearchFilter, LogSearchParams
+from error_analysis.datadog.query_builder import build_checkout_query
+from error_analysis.datadog.search import search_logs
+
+COPYBOOK_START_FIELD = "ORRORH-REQUEST-FUNCTION"
+IGNORED_FIELD_PREFIXES = ("ORRORD-",)
+FILLER_TOKEN = "FILLER"
+
+# XML tag names that differ slightly from the copybook field name.
+XML_TAG_ALIASES: dict[str, tuple[str, ...]] = {
+    "ORRORH-CC-FIRST-NAME": ("ORRORH-CC-FIRST-NAME-INITIAL",),
+    "ORRORH-EU-SHIP-CTAC-NAME": ("ORRORH-EU-SHIP-CTAC-NAM",),
+    "ORRORH-ORDER-FTZ-FLAG-SW": ("ORRORH-ORDER-FTZ-FLAG",),
+}
+
+SPACES_VALUE = "Spaces"
+SUBSTATION_MARKER = "Substation Request"
+ORDER_UPDATE_SERVICE = "OrderUpdate_Service_root"
+SUBSTATION_LOG_DESCRIPTION = "OrderCreateCallSubstationRequest"
+V2_SERVICE_PREFIX = "OrderCreate_v2"
+
+_PIC_FIELD_RE = re.compile(
+    r"^\s*(?:\d{6})?\s*(\d{2})\s+(ORRORH-[A-Z0-9-]+)\s+PIC\b",
+    re.IGNORECASE,
+)
+_COMMENT_SEQ_RE = re.compile(r"^\d{6}\*")
+_XML_TAG_RE = re.compile(
+    r"<(?:\w+:)?(ORRORH-[A-Z0-9-]+)(?:\s[^>/]*)?(?:/>|>(.*?)</(?:\w+:)?\1>)",
+    re.IGNORECASE | re.DOTALL,
+)
+_SS_OPEN_RE = re.compile(r"<(?:\w+:)?SSOrderEntryRequest\b", re.IGNORECASE)
+_SS_CLOSE_RE = re.compile(r"</(?:\w+:)?SSOrderEntryRequest>", re.IGNORECASE)
+_SERVICE_NAME_RE = re.compile(
+    r"<(?:\w+:)?ServiceName>(.*?)</(?:\w+:)?ServiceName>",
+    re.IGNORECASE | re.DOTALL,
+)
+_LOG_DESC_RE = re.compile(
+    r"<(?:\w+:)?LogDescription>(.*?)</(?:\w+:)?LogDescription>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def copybook_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "copybooks" / "ORRORH"
+
+
+def _is_comment_line(line: str) -> bool:
+    if _COMMENT_SEQ_RE.match(line):
+        return True
+    if len(line) > 6 and line[:6].isdigit() and line[6] == "*":
+        return True
+    body = re.sub(r"^\d{6}", "", line)
+    return body.lstrip().startswith("*")
+
+
+def parse_orrorh_fields(copybook_text: str) -> list[str]:
+    """Elementary ORRORH PIC fields, starting at ``ORRORH-REQUEST-FUNCTION``.
+
+    Skips comments, 88-levels, FILLER, group items without PIC, and ORRORD-*.
+    """
+    names: list[str] = []
+    started = False
+    for raw in copybook_text.splitlines():
+        if _is_comment_line(raw):
+            continue
+        match = _PIC_FIELD_RE.search(raw)
+        if not match:
+            continue
+        level = int(match.group(1))
+        name = match.group(2).strip().upper()
+        if level == 88:
+            continue
+        if FILLER_TOKEN in name:
+            continue
+        if name.startswith(IGNORED_FIELD_PREFIXES):
+            continue
+        if not started:
+            if name != COPYBOOK_START_FIELD:
+                continue
+            started = True
+        names.append(name)
+    return names
+
+
+@lru_cache(maxsize=1)
+def orrorh_copybook_fields() -> tuple[str, ...]:
+    path = copybook_path()
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return tuple(parse_orrorh_fields(text))
+
+
+def extract_substation_xml(text: str) -> str:
+    """Return the ``SSOrderEntryRequest`` XML from a Substation Request payload."""
+    if not text or not isinstance(text, str):
+        return ""
+    unescaped = html.unescape(text)
+    start = _SS_OPEN_RE.search(unescaped)
+    if not start:
+        return ""
+    end = _SS_CLOSE_RE.search(unescaped, start.start())
+    if not end:
+        return ""
+    return unescaped[start.start() : end.end()]
+
+
+def parse_orrorh_xml_values(xml_text: str) -> dict[str, str]:
+    """Map ``ORRORH-*`` tags to inner text. Empty / self-closing tags are omitted."""
+    values: dict[str, str] = {}
+    for match in _XML_TAG_RE.finditer(xml_text or ""):
+        name = match.group(1).strip().upper()
+        if name.startswith(IGNORED_FIELD_PREFIXES):
+            continue
+        inner = match.group(2)
+        if inner is None:
+            continue
+        stripped = html.unescape(inner).strip()
+        if stripped:
+            values[name] = stripped
+    return values
+
+
+def lookup_field_value(field: str, xml_values: dict[str, str]) -> str:
+    key = (field or "").strip().upper()
+    if key in xml_values:
+        return xml_values[key]
+    for alias in XML_TAG_ALIASES.get(key, ()):
+        if alias in xml_values:
+            return xml_values[alias]
+    return SPACES_VALUE
+
+
+def build_orrorh_report_lines(
+    xml_text: str,
+    *,
+    fields: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    """Numbered ``FIELD = value`` lines from the copybook vs Substation XML."""
+    names = list(fields if fields is not None else orrorh_copybook_fields())
+    xml_values = parse_orrorh_xml_values(xml_text)
+    lines: list[str] = []
+    for index, name in enumerate(names, start=1):
+        value = lookup_field_value(name, xml_values)
+        lines.append(f"{index}. {name} = {value}")
+    return lines
+
+
+def format_orrorh_report(xml_text: str) -> str:
+    return "\n".join(build_orrorh_report_lines(xml_text))
+
+
+@dataclass(frozen=True)
+class OrrorhLookupResult:
+    report: str
+    fields: list[dict[str, str]]
+    xml: str
+    v2_found: bool
+    source_log_id: str | None
+
+
+def _event_strings(event: dict[str, Any]) -> list[str]:
+    chunks: list[str] = []
+    attributes = event.get("attributes") if isinstance(event, dict) else None
+    nested = None
+    if isinstance(attributes, dict):
+        nested = attributes.get("attributes")
+    for container in (nested, attributes, event):
+        if not isinstance(container, dict):
+            continue
+        for key in (
+            "RequestLogPayload",
+            "requestLogPayload",
+            "message",
+            "LogDescription",
+            "ServiceName",
+            "service",
+        ):
+            value = container.get(key)
+            if isinstance(value, str) and value.strip():
+                chunks.append(html.unescape(value))
+    return chunks
+
+
+def _joined_event_text(event: dict[str, Any]) -> str:
+    return "\n".join(_event_strings(event))
+
+
+def _event_service(event: dict[str, Any]) -> str:
+    attributes = event.get("attributes") if isinstance(event, dict) else None
+    if isinstance(attributes, dict):
+        nested = attributes.get("attributes")
+        if isinstance(nested, dict):
+            service = nested.get("service")
+            if isinstance(service, str) and service.strip():
+                return service.strip()
+        service = attributes.get("service")
+        if isinstance(service, str) and service.strip():
+            return service.strip()
+    service = event.get("service") if isinstance(event, dict) else None
+    if isinstance(service, str):
+        return service.strip()
+    return ""
+
+
+def is_order_create_v2_event(event: dict[str, Any], order_number: str) -> bool:
+    """True when the log is OrderCreate_v2_0 for the resubmitted customer PO."""
+    po = (order_number or "").strip()
+    if not po:
+        return False
+    text = _joined_event_text(event)
+    if po not in text:
+        return False
+    service = _event_service(event)
+    if service.startswith(V2_SERVICE_PREFIX):
+        return True
+    if V2_SERVICE_PREFIX in text:
+        return True
+    named = _SERVICE_NAME_RE.search(text)
+    if named and V2_SERVICE_PREFIX in named.group(1):
+        return True
+    return False
+
+
+def is_order_update_substation_event(event: dict[str, Any]) -> bool:
+    """True for OrderUpdate_Service_root OrderCreateCallSubstationRequest logs."""
+    service = _event_service(event)
+    text = _joined_event_text(event)
+    has_service = ORDER_UPDATE_SERVICE in service or ORDER_UPDATE_SERVICE in text
+    if not has_service:
+        named = _SERVICE_NAME_RE.search(text)
+        has_service = bool(named and ORDER_UPDATE_SERVICE in named.group(1))
+    if not has_service:
+        return False
+    if SUBSTATION_LOG_DESCRIPTION in text:
+        return True
+    desc = _LOG_DESC_RE.search(text)
+    if desc and SUBSTATION_LOG_DESCRIPTION in desc.group(1):
+        return True
+    return SUBSTATION_MARKER in text
+
+
+def extract_substation_xml_from_event(event: dict[str, Any]) -> str:
+    for chunk in _event_strings(event):
+        if SUBSTATION_MARKER not in chunk and "SSOrderEntryRequest" not in chunk:
+            continue
+        xml = extract_substation_xml(chunk)
+        if xml:
+            return xml
+    return extract_substation_xml(_joined_event_text(event))
+
+
+def xml_matches_order_number(xml_text: str, order_number: str) -> bool:
+    po = (order_number or "").strip()
+    return bool(po) and po in (xml_text or "")
+
+
+def report_from_substation_xml(xml_text: str) -> OrrorhLookupResult:
+    lines = build_orrorh_report_lines(xml_text)
+    fields = []
+    for line in lines:
+        _, rest = line.split(". ", 1)
+        name, value = rest.split(" = ", 1)
+        fields.append({"name": name, "value": value})
+    return OrrorhLookupResult(
+        report="\n".join(lines),
+        fields=fields,
+        xml=xml_text,
+        v2_found=False,
+        source_log_id=None,
+    )
+
+
+def empty_orrorh_result(*, v2_found: bool = False) -> OrrorhLookupResult:
+    return OrrorhLookupResult(
+        report="",
+        fields=[],
+        xml="",
+        v2_found=v2_found,
+        source_log_id=None,
+    )
+
+
+def _search_events(
+    client: DatadogClient,
+    settings: Settings,
+    *,
+    search_text: str,
+    service: str | None,
+    from_time: str,
+    to_time: str,
+) -> list[dict[str, Any]]:
+    query = build_checkout_query(
+        search_text=search_text,
+        service=service,
+    )
+    params = LogSearchParams(
+        filter=LogSearchFilter(
+            query=query,
+            **{"from": from_time, "to": to_time},
+            storage_tier=settings.default_storage_tier,
+        ),
+        sort=settings.default_sort,
+        page_limit=settings.default_page_limit,
+    )
+    return list(search_logs(client, params))
+
+
+def find_v2_event(
+    events: list[dict[str, Any]], order_number: str
+) -> dict[str, Any] | None:
+    for event in events:
+        if is_order_create_v2_event(event, order_number):
+            return event
+    return None
+
+
+def find_substation_xml(
+    events: list[dict[str, Any]], order_number: str
+) -> tuple[str, str | None]:
+    for event in events:
+        if not is_order_update_substation_event(event):
+            continue
+        xml = extract_substation_xml_from_event(event)
+        if not xml:
+            continue
+        if order_number and not xml_matches_order_number(xml, order_number):
+            continue
+        log_id = event.get("id")
+        return xml, str(log_id) if log_id else None
+    return "", None
+
+
+def lookup_orrorh_from_events(
+    *,
+    v2_events: list[dict[str, Any]],
+    update_events: list[dict[str, Any]],
+    order_number: str,
+) -> OrrorhLookupResult:
+    v2_event = find_v2_event(v2_events, order_number)
+    xml, log_id = find_substation_xml(update_events, order_number)
+    if not xml:
+        return empty_orrorh_result(v2_found=v2_event is not None)
+    result = report_from_substation_xml(xml)
+    return OrrorhLookupResult(
+        report=result.report,
+        fields=result.fields,
+        xml=xml,
+        v2_found=v2_event is not None,
+        source_log_id=log_id,
+    )
+
+
+def fetch_orrorh_lookup(
+    client: DatadogClient,
+    settings: Settings,
+    *,
+    order_number: str,
+    from_time: str,
+    to_time: str,
+    env: str | None = None,
+) -> OrrorhLookupResult:
+    """Find OrderCreate_v2_0 then OrderUpdate_Service_root Substation Request."""
+    del env  # reserved for callers that already scoped the Datadog window
+    po = (order_number or "").strip()
+    if not po:
+        return empty_orrorh_result()
+
+    v2_events = _search_events(
+        client,
+        settings,
+        search_text=po,
+        service="OrderCreate_v2*",
+        from_time=from_time,
+        to_time=to_time,
+    )
+    update_events = _search_events(
+        client,
+        settings,
+        search_text=f"{po} {SUBSTATION_LOG_DESCRIPTION}",
+        service=ORDER_UPDATE_SERVICE,
+        from_time=from_time,
+        to_time=to_time,
+    )
+    result = lookup_orrorh_from_events(
+        v2_events=v2_events,
+        update_events=update_events,
+        order_number=po,
+    )
+    if result.xml:
+        return result
+
+    # Some tenants index ServiceName/LogDescription without the service facet.
+    fallback_events = _search_events(
+        client,
+        settings,
+        search_text=f"{po} {ORDER_UPDATE_SERVICE} {SUBSTATION_LOG_DESCRIPTION}",
+        service=None,
+        from_time=from_time,
+        to_time=to_time,
+    )
+    return lookup_orrorh_from_events(
+        v2_events=v2_events,
+        update_events=fallback_events,
+        order_number=po,
+    )

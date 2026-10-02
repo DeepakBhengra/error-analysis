@@ -31,6 +31,11 @@ from error_analysis.order_create.order_number import (
     resolve_replay_order_number,
 )
 from error_analysis.error_lookup.client import corora_code_from_statuscode
+from error_analysis.order_create.orrorh_report import (
+    OrrorhLookupResult,
+    empty_orrorh_result,
+    fetch_orrorh_lookup,
+)
 from error_analysis.order_create.response_check import (
     ResponseCheckResult,
     build_error_report,
@@ -51,6 +56,9 @@ logger = get_logger("order_create.replay")
 # (30-Q6HX2). Keep this short so Re-Submit stays close to Postman speed.
 IMPULSE_LOOKUP_POLL_INTERVAL = 2.0
 IMPULSE_LOOKUP_TIMEOUT = 12.0
+# OrderUpdate_Service_root Substation Request is a hop after OrderCreate_v2_0.
+ORRORH_LOOKUP_POLL_INTERVAL = 2.0
+ORRORH_LOOKUP_TIMEOUT = 20.0
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,7 @@ class ReplayResult:
     summary: dict[str, Any] | None
     outcome: str  # SUCCESS | FAILED | TIMEOUT | UNKNOWN
     curl: str = ""
+    orrorh_report: str = ""
 
 
 def default_time_window() -> tuple[str, str]:
@@ -383,6 +392,84 @@ def _enrich_corora_from_datadog(
     return records, check
 
 
+def poll_orrorh_report(
+    settings: Settings,
+    *,
+    order_number: str,
+    from_time: str | None,
+    to_time: str | None,
+    env: str | None = None,
+    poll_interval: float = ORRORH_LOOKUP_POLL_INTERVAL,
+    timeout: float = ORRORH_LOOKUP_TIMEOUT,
+) -> OrrorhLookupResult:
+    """Poll until OrderCreate_v2_0 and OrderUpdate Substation Request are found."""
+    window_from, window_to = default_time_window()
+    poll_from = from_time or window_from
+    poll_to = to_time or window_to
+    deadline = time.monotonic() + timeout
+    last = empty_orrorh_result()
+    with DatadogClient(settings) as client:
+        while True:
+            last = fetch_orrorh_lookup(
+                client,
+                settings,
+                order_number=order_number,
+                from_time=poll_from,
+                to_time=poll_to,
+                env=env,
+            )
+            if last.xml:
+                return last
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return last
+            time.sleep(min(poll_interval, remaining))
+
+
+def _lookup_orrorh_after_replay(
+    settings: Settings,
+    *,
+    order_number: str,
+    from_time: str | None,
+    to_time: str | None,
+    env: str | None,
+    out_dir: Path | None,
+) -> OrrorhLookupResult:
+    try:
+        result = poll_orrorh_report(
+            settings,
+            order_number=order_number,
+            from_time=from_time,
+            to_time=to_time,
+            env=env,
+        )
+    except DatadogError as exc:
+        logger.warning("ORRORH Substation lookup skipped: %s", exc)
+        return empty_orrorh_result()
+    except Exception as exc:
+        logger.warning("ORRORH Substation lookup failed: %s", exc)
+        return empty_orrorh_result()
+
+    if out_dir is not None and result.report:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "orrorh-report.txt").write_text(
+            result.report + "\n", encoding="utf-8"
+        )
+    return result
+
+
+def _attach_orrorh_summary(
+    summary: dict[str, Any], result: OrrorhLookupResult
+) -> dict[str, Any]:
+    if result.report:
+        summary["orrorhReport"] = result.report
+        summary["orrorhFields"] = result.fields
+        summary["orrorhV2Found"] = result.v2_found
+        if result.source_log_id:
+            summary["orrorhSourceLogId"] = result.source_log_id
+    return summary
+
+
 def _finalize_artifacts(
     out_dir: Path | None,
     summary: dict[str, Any],
@@ -478,6 +565,15 @@ def _complete_replay(
     if out_dir is not None:
         _write_json(out_dir / "order-create-replay-logs.json", fetched_records)
 
+    orrorh = _lookup_orrorh_after_replay(
+        settings,
+        order_number=new_number,
+        from_time=from_time,
+        to_time=to_time,
+        env=env,
+        out_dir=out_dir,
+    )
+
     if check is None:
         if wait_for_logs:
             outcome = "TIMEOUT"
@@ -494,6 +590,7 @@ def _complete_replay(
             http_body=http_body,
             message=message,
         )
+        _attach_orrorh_summary(summary, orrorh)
         _finalize_artifacts(out_dir, summary)
         return ReplayResult(
             customer_order_number=new_number,
@@ -506,6 +603,7 @@ def _complete_replay(
             summary=summary,
             outcome=outcome,
             curl=curl_text,
+            orrorh_report=orrorh.report,
         )
 
     if check.outcome == "FAILED":
@@ -524,6 +622,7 @@ def _complete_replay(
             summary["globalorderid"] = impulse
         elif not is_impulse_order_number(summary.get("globalorderid")):
             summary["globalorderid"] = ""
+        _attach_orrorh_summary(summary, orrorh)
         _finalize_artifacts(out_dir, summary, write_error_report=True)
         return ReplayResult(
             customer_order_number=new_number,
@@ -536,6 +635,7 @@ def _complete_replay(
             summary=summary,
             outcome="FAILED",
             curl=curl_text,
+            orrorh_report=orrorh.report,
         )
 
     if check.outcome == "SUCCESS":
@@ -555,6 +655,7 @@ def _complete_replay(
             summary["globalorderid"] = impulse
         elif not is_impulse_order_number(summary.get("globalorderid")):
             summary["globalorderid"] = ""
+        _attach_orrorh_summary(summary, orrorh)
         _finalize_artifacts(out_dir, summary)
         return ReplayResult(
             customer_order_number=new_number,
@@ -567,6 +668,7 @@ def _complete_replay(
             summary=summary,
             outcome="SUCCESS",
             curl=curl_text,
+            orrorh_report=orrorh.report,
         )
 
     summary = build_result_payload(
@@ -584,6 +686,7 @@ def _complete_replay(
         response_payload=check.response_payload,
         http_body=http_body,
     )
+    _attach_orrorh_summary(summary, orrorh)
     _finalize_artifacts(out_dir, summary)
     return ReplayResult(
         customer_order_number=new_number,
@@ -596,6 +699,7 @@ def _complete_replay(
         summary=summary,
         outcome="UNKNOWN",
         curl=curl_text,
+        orrorh_report=orrorh.report,
     )
 
 
