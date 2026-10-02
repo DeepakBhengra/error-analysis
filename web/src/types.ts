@@ -36,7 +36,6 @@ export interface CurlHttpResponse {
   repairedFields: string[]
   unresolvedFields: string[]
   repairMessage: string
-  orrorhReport?: string
 }
 
 export interface OrderRequestPreviewResponse {
@@ -51,6 +50,8 @@ export interface OrderRequestPreviewResponse {
   url: string
   query?: string
   recordCount?: number
+  orrorhReport?: string
+  orrorhFields?: Array<{ name: string; value: string }>
 }
 
 export interface OrderModifyPreviewResponse {
