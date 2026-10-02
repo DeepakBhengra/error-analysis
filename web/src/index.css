@@ -1306,6 +1306,103 @@ body {
   max-height: 420px;
 }
 
+.orrorh-field-list {
+  list-style: none;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.orrorh-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 2px;
+}
+
+.orrorh-field-index {
+  color: var(--text-muted);
+  min-width: 2.4em;
+  flex-shrink: 0;
+}
+
+.orrorh-field-name {
+  color: var(--text);
+}
+
+.orrorh-field-link {
+  appearance: none;
+  border: none;
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 0 3px;
+  margin: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.orrorh-field-link:hover,
+.orrorh-field-link:focus-visible {
+  background: #ffedd5;
+  color: #7c2d12;
+}
+
+.orrorh-field-eq {
+  color: var(--text-muted);
+}
+
+.orrorh-field-value {
+  color: var(--text);
+}
+
+.orrorh-88-popup {
+  width: min(560px, 100%);
+  max-height: min(72vh, 560px);
+}
+
+.orrorh-88-current {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.orrorh-88-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.orrorh-88-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.orrorh-88-table th,
+.orrorh-88-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+
+.orrorh-88-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.orrorh-88-table code {
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.orrorh-88-row-match {
+  background: var(--success-bg);
+}
+
 .curl-response-header {
   display: flex;
   justify-content: space-between;

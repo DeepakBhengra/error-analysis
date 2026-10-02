@@ -34,6 +34,13 @@ _PIC_FIELD_RE = re.compile(
     r"^\s*(?:\d{6})?\s*(\d{2})\s+(ORRORH-[A-Z0-9-]+)\s+PIC\b",
     re.IGNORECASE,
 )
+_LEVEL88_RE = re.compile(
+    r"^\s*88\s+(ORRORH-[A-Z0-9-]+)\b",
+    re.IGNORECASE,
+)
+_SEQ_PREFIX_RE = re.compile(r"^\d{6}")
+_TRAILING_MARK_RE = re.compile(r"\s+[A-Z]{2,4}\d{5}\s*$")
+_LITERAL_RE = re.compile(r"'([^']*)'")
 _COMMENT_SEQ_RE = re.compile(r"^\d{6}\*")
 _XML_TAG_RE = re.compile(
     r"<(?:\w+:)?(ORRORH-[A-Z0-9-]+)(?:\s[^>/]*)?(?:/>|>(.*?)</(?:\w+:)?\1>)",
@@ -64,40 +71,152 @@ def _is_comment_line(line: str) -> bool:
     return body.lstrip().startswith("*")
 
 
-def parse_orrorh_fields(copybook_text: str) -> list[str]:
-    """Elementary ORRORH PIC fields, starting at ``ORRORH-REQUEST-FUNCTION``.
+def _copybook_body(line: str) -> str:
+    """Drop sequence numbers and trailing change-mark tokens (e.g. ROR10293)."""
+    text = _SEQ_PREFIX_RE.sub("", line, count=1)
+    return _TRAILING_MARK_RE.sub("", text).rstrip()
 
-    Skips comments, 88-levels, FILLER, group items without PIC, and ORRORD-*.
+
+def _cobol_literals(text: str) -> list[str]:
+    return [match.group(1) for match in _LITERAL_RE.finditer(text or "")]
+
+
+@dataclass(frozen=True)
+class OrrorhCondition:
+    """88-level condition-name attached to the preceding PIC field."""
+
+    name: str
+    values: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OrrorhCopybookField:
+    name: str
+    conditions: tuple[OrrorhCondition, ...] = ()
+
+
+def parse_orrorh_copybook(copybook_text: str) -> list[OrrorhCopybookField]:
+    """Elementary ORRORH PIC fields with attached 88 condition-names.
+
+    Starts at ``ORRORH-REQUEST-FUNCTION``. Skips comments, FILLER, group items
+    without PIC, and ORRORD-*. 88 VALUE literals may continue on the next line.
     """
-    names: list[str] = []
+    fields: list[OrrorhCopybookField] = []
+    pending_conditions: list[OrrorhCondition] = []
+    current_88_name: str | None = None
+    current_88_values: list[str] = []
     started = False
+    active = False
+
+    def flush_88() -> None:
+        nonlocal current_88_name, current_88_values
+        if current_88_name:
+            pending_conditions.append(
+                OrrorhCondition(current_88_name, tuple(current_88_values))
+            )
+        current_88_name = None
+        current_88_values = []
+
+    def finish_field() -> None:
+        flush_88()
+        if fields and active and pending_conditions:
+            last = fields[-1]
+            fields[-1] = OrrorhCopybookField(last.name, tuple(pending_conditions))
+        pending_conditions.clear()
+
     for raw in copybook_text.splitlines():
         if _is_comment_line(raw):
             continue
-        match = _PIC_FIELD_RE.search(raw)
-        if not match:
+        body = _copybook_body(raw)
+        if not body.strip():
             continue
-        level = int(match.group(1))
-        name = match.group(2).strip().upper()
-        if level == 88:
-            continue
-        if FILLER_TOKEN in name:
-            continue
-        if name.startswith(IGNORED_FIELD_PREFIXES):
-            continue
-        if not started:
-            if name != COPYBOOK_START_FIELD:
+
+        pic = _PIC_FIELD_RE.search(raw)
+        if pic:
+            finish_field()
+            level = int(pic.group(1))
+            name = pic.group(2).strip().upper()
+            if level == 88:
+                active = False
                 continue
-            started = True
-        names.append(name)
-    return names
+            if FILLER_TOKEN in name or name.startswith(IGNORED_FIELD_PREFIXES):
+                active = False
+                continue
+            if not started:
+                if name != COPYBOOK_START_FIELD:
+                    active = False
+                    continue
+                started = True
+            fields.append(OrrorhCopybookField(name, ()))
+            active = True
+            continue
+
+        if not started or not fields or not active:
+            continue
+
+        level88 = _LEVEL88_RE.match(body.lstrip())
+        if level88:
+            flush_88()
+            current_88_name = level88.group(1).strip().upper()
+            current_88_values = _cobol_literals(body)
+            continue
+
+        if current_88_name:
+            extra = _cobol_literals(body)
+            if extra:
+                current_88_values.extend(extra)
+
+    finish_field()
+    return fields
+
+
+def parse_orrorh_fields(copybook_text: str) -> list[str]:
+    """Elementary ORRORH PIC field names, starting at ``ORRORH-REQUEST-FUNCTION``."""
+    return [field.name for field in parse_orrorh_copybook(copybook_text)]
+
+
+@lru_cache(maxsize=1)
+def orrorh_copybook_model() -> tuple[OrrorhCopybookField, ...]:
+    path = copybook_path()
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return tuple(parse_orrorh_copybook(text))
 
 
 @lru_cache(maxsize=1)
 def orrorh_copybook_fields() -> tuple[str, ...]:
-    path = copybook_path()
-    text = path.read_text(encoding="utf-8", errors="replace")
-    return tuple(parse_orrorh_fields(text))
+    return tuple(field.name for field in orrorh_copybook_model())
+
+
+def condition_matches(values: tuple[str, ...] | list[str], field_value: str) -> bool:
+    """True when the PIC field value satisfies a COBOL 88 VALUE set."""
+    current = "" if (field_value or "") == SPACES_VALUE else (field_value or "")
+    for literal in values:
+        if literal.strip() == "":
+            if current == "":
+                return True
+            continue
+        if current == literal:
+            return True
+    return False
+
+
+def _condition_payload(
+    field: OrrorhCopybookField, value: str
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for condition in field.conditions:
+        display_values = [
+            SPACES_VALUE if literal.strip() == "" else literal
+            for literal in condition.values
+        ]
+        items.append(
+            {
+                "name": condition.name,
+                "values": display_values,
+                "matched": condition_matches(condition.values, value),
+            }
+        )
+    return items
 
 
 def extract_substation_xml(text: str) -> str:
@@ -159,6 +278,25 @@ def build_orrorh_report_lines(
         value = lookup_field_value(name, xml_values)
         lines.append(f"{index}. {name} = {value}")
     return lines
+
+
+def build_orrorh_report_fields(
+    xml_text: str,
+    *,
+    model: list[OrrorhCopybookField] | tuple[OrrorhCopybookField, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """Copybook fields with XML values and 88 condition-names."""
+    entries = list(model if model is not None else orrorh_copybook_model())
+    xml_values = parse_orrorh_xml_values(xml_text)
+    payload: list[dict[str, Any]] = []
+    for field in entries:
+        value = lookup_field_value(field.name, xml_values)
+        item: dict[str, Any] = {"name": field.name, "value": value}
+        conditions = _condition_payload(field, value)
+        if conditions:
+            item["conditions"] = conditions
+        payload.append(item)
+    return payload
 
 
 def format_orrorh_report(xml_text: str) -> str:
@@ -311,12 +449,11 @@ def event_matches_order_number(
 
 
 def report_from_substation_xml(xml_text: str) -> OrrorhLookupResult:
-    lines = build_orrorh_report_lines(xml_text)
-    fields = []
-    for line in lines:
-        _, rest = line.split(". ", 1)
-        name, value = rest.split(" = ", 1)
-        fields.append({"name": name, "value": value})
+    fields = build_orrorh_report_fields(xml_text)
+    lines = [
+        f"{index}. {item['name']} = {item['value']}"
+        for index, item in enumerate(fields, start=1)
+    ]
     return OrrorhLookupResult(
         report="\n".join(lines),
         fields=fields,
