@@ -50,6 +50,10 @@ from error_analysis.order_create.replay import (
     run_replay,
     run_replay_from_curl,
 )
+from error_analysis.order_create.orrorh_report import (
+    empty_orrorh_result,
+    fetch_orrorh_lookup,
+)
 from error_analysis.order_create.validation_repair import repair_order_create_curl
 
 logger = get_logger("api")
@@ -557,6 +561,41 @@ def update_app_settings(payload: SettingsUpdateRequest) -> dict[str, Any]:
     return _settings_response(_load_settings())
 
 
+def _lookup_substation_logs(
+    settings: Settings,
+    *,
+    order_number: str,
+    from_time: str,
+    to_time: str,
+    env: str | None = None,
+) -> dict[str, Any]:
+    """Fetch ORRORH Substation Logs for a customer PO (search or Re-Submit)."""
+    po = (order_number or "").strip()
+    if not po:
+        empty = empty_orrorh_result()
+        return {"orrorhReport": "", "orrorhFields": [], "orrorhV2Found": empty.v2_found}
+    try:
+        with DatadogClient(settings) as client:
+            result = fetch_orrorh_lookup(
+                client,
+                settings,
+                order_number=po,
+                from_time=from_time,
+                to_time=to_time,
+                env=env,
+            )
+    except Exception as exc:
+        logger.warning("Substation Logs lookup skipped for %r: %s", po, exc)
+        empty = empty_orrorh_result()
+        return {"orrorhReport": "", "orrorhFields": [], "orrorhV2Found": empty.v2_found}
+    return {
+        "orrorhReport": result.report,
+        "orrorhFields": result.fields,
+        "orrorhV2Found": result.v2_found,
+        "orrorhSourceLogId": result.source_log_id,
+    }
+
+
 def _preview_message(built: OrderCreateCurl, *, text: str) -> str:
     order_number = ""
     if isinstance(built.body.get("customerOrderNumber"), str):
@@ -640,6 +679,14 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
     if isinstance(built.body.get("customerOrderNumber"), str):
         order_number = built.body["customerOrderNumber"].strip()
 
+    substation = _lookup_substation_logs(
+        settings,
+        order_number=order_number or text,
+        from_time=search_from,
+        to_time=search_to,
+        env=payload.env,
+    )
+
     return {
         "outcome": "READY",
         "message": _preview_message(built, text=text),
@@ -653,6 +700,8 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
         "query": fetched.query,
         "recordCount": len(fetched.records),
         "target": payload.target,
+        "orrorhReport": substation.get("orrorhReport") or "",
+        "orrorhFields": substation.get("orrorhFields") or [],
     }
 
 

@@ -58,6 +58,7 @@ export default function App() {
   const [createCurl, setCreateCurl] = useState('')
   const [modifyCurl, setModifyCurl] = useState('')
   const [httpResponse, setHttpResponse] = useState<CurlHttpResponse | null>(null)
+  const [substationLogs, setSubstationLogs] = useState('')
   const [previewSource, setPreviewSource] = useState<OrderRequestSource | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingKind, setLoadingKind] = useState<'preview' | 'submit' | null>(null)
@@ -116,8 +117,8 @@ export default function App() {
       repairedFields: data.repairedFields ?? [],
       unresolvedFields: data.unresolvedFields ?? [],
       repairMessage: data.repairMessage ?? '',
-      orrorhReport: data.orrorhReport ?? '',
     })
+    setSubstationLogs(data.orrorhReport ?? '')
     setBannerOutcome(data.outcome)
     setBannerMessage(data.message)
     setError(null)
@@ -148,6 +149,7 @@ export default function App() {
     setBannerMessage('')
     setPreviewSource(null)
     setHttpResponse(null)
+    setSubstationLogs('')
 
     const wantsCreate = curlTypes.includes('create')
     const wantsModify = curlTypes.includes('modify')
@@ -172,12 +174,14 @@ export default function App() {
           const data = await fetchOrderRequest({ ...searchParams, target })
           setCreateCurl(data.curl || '')
           setPreviewSource(data.source)
+          setSubstationLogs(data.orrorhReport || '')
           messages.push(data.message)
           createFound = Boolean(data.curl?.trim())
         } catch (err) {
           if (isAbortError(err)) throw err
           if (wantsModify && isMissingCurlResultError(err)) {
             setCreateCurl('')
+            setSubstationLogs('')
             skipped.push(`Order Create curl: ${err instanceof ApiError ? err.message : String(err)}`)
           } else {
             throw err
@@ -304,6 +308,7 @@ export default function App() {
     setCreateCurl('')
     setModifyCurl('')
     setHttpResponse(null)
+    setSubstationLogs('')
     setPreviewSource(null)
     setError(null)
     setBannerOutcome(null)
@@ -450,6 +455,7 @@ export default function App() {
             loading={loading}
             canCancel={loadingKind === 'submit'}
             httpResponse={httpResponse}
+            substationLogs={substationLogs}
             onCreateChange={setCreateCurl}
             onModifyChange={setModifyCurl}
             onResubmit={handleResubmit}
