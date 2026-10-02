@@ -779,6 +779,66 @@ def test_resubmit_one_up_updates_customer_and_end_po(monkeypatch):
     assert '"endCustomerOrderNumber": "P27951377"' in data["curl"]
 
 
+def test_resubmit_uses_saved_settings_mode_when_request_omits_mode(monkeypatch):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+    monkeypatch.setenv("DEFAULT_REPLAY_MODE", "one_up")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    post_calls: list[dict] = []
+
+    def fake_post(**kwargs):
+        post_calls.append(kwargs)
+        return 200, {"ok": True}
+
+    _patch_replay_post(monkeypatch, fake_post)
+
+    client = TestClient(api_module.app)
+    response = client.post("/api/resubmit", json={"curl": _PO_CURL})
+    assert response.status_code == 200, response.text
+    assert post_calls[0]["body"]["customerOrderNumber"] == "P27951377"
+    assert post_calls[0]["body"]["endCustomerOrderNumber"] == "P27951377"
+    assert response.json()["customerOrderNumber"] == "P27951377"
+
+
+def test_resubmit_saved_random_mode_without_request_mode(monkeypatch):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+    monkeypatch.setenv("DEFAULT_REPLAY_MODE", "random")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+    from error_analysis.order_create import order_number as order_number_mod
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+    monkeypatch.setattr(order_number_mod.random, "choices", lambda _alphabet, k: ["X"] * k)
+
+    post_calls: list[dict] = []
+
+    def fake_post(**kwargs):
+        post_calls.append(kwargs)
+        return 200, {"ok": True}
+
+    _patch_replay_post(monkeypatch, fake_post)
+
+    client = TestClient(api_module.app)
+    response = client.post("/api/resubmit", json={"curl": _PO_CURL})
+    assert response.status_code == 200, response.text
+    posted = post_calls[0]["body"]["customerOrderNumber"]
+    assert posted != "P27951376"
+    assert len(posted) <= 18
+    assert posted == post_calls[0]["body"]["endCustomerOrderNumber"]
+    assert response.json()["customerOrderNumber"] == posted
+
+
 def test_resubmit_random_updates_customer_and_end_po(monkeypatch):
     monkeypatch.setenv("DD_API_KEY", "test-dd-api")
     monkeypatch.setenv("DD_APP_KEY", "test-dd-app")

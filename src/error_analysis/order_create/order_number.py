@@ -12,19 +12,47 @@ MAX_CUSTOMER_ORDER_NUMBER_LENGTH = 18
 _RANDOM_ALPHABET = string.ascii_uppercase + string.digits
 
 
-def bump_trailing_number(value: str) -> str:
+def bump_trailing_number(
+    value: str,
+    max_length: int = MAX_CUSTOMER_ORDER_NUMBER_LENGTH,
+) -> str:
     """Increment trailing digits by 1, preserving width when possible.
 
     Examples: DEEPAKDDTEST11 -> DEEPAKDDTEST12, TEST011 -> TEST012.
-    If no trailing digits, append '1'.
+    If no trailing digits, append '1' when it fits in ``max_length``.
+    The result always differs from the input and never exceeds ``max_length``.
     """
+    if max_length < 1:
+        raise ValueError("max_length must be at least 1")
     text = value.strip()
     match = _TRAILING_DIGITS.match(text)
-    if not match:
-        return f"{text}1"
-    prefix, digits = match.group(1), match.group(2)
-    bumped = str(int(digits) + 1).zfill(len(digits))
-    return f"{prefix}{bumped}"
+    if match:
+        prefix, digits = match.group(1), match.group(2)
+        bumped_digits = str(int(digits) + 1).zfill(len(digits))
+        result = f"{prefix}{bumped_digits}"
+    elif len(text) < max_length:
+        result = f"{text}1"
+    else:
+        result = f"{text[: max_length - 1]}1"
+
+    if len(result) > max_length:
+        overflow = _TRAILING_DIGITS.match(result)
+        if overflow:
+            prefix, digits = overflow.group(1), overflow.group(2)
+            room = max(0, max_length - len(digits))
+            result = f"{prefix[:room]}{digits}"[:max_length]
+        else:
+            result = result[:max_length]
+
+    if result != text and result != text[:max_length]:
+        return result
+
+    base = (text or "P")[: max(1, max_length) - 1]
+    for suffix in "123456789ABCDEFGHJKLMNPQRSTUVWXYZ":
+        candidate = f"{base}{suffix}"
+        if candidate != text and candidate != text[:max_length]:
+            return candidate
+    return f"{base}X"
 
 
 def _clamp_order_number(value: str, max_length: int = MAX_CUSTOMER_ORDER_NUMBER_LENGTH) -> str:
@@ -70,13 +98,32 @@ def random_order_number(
     return _clamp_order_number(f"{stem}{filled}", max_length)
 
 
+def customer_order_number_from_body(body: dict[str, Any] | None) -> str:
+    """Read customerOrderNumber from a v6 body, ignoring key casing."""
+    if not isinstance(body, dict):
+        return ""
+    for key, value in body.items():
+        if key.lower() != "customerordernumber" or value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
 def apply_order_number(body: dict[str, Any], new_number: str) -> dict[str, Any]:
     """Deep-copy body and set customerOrderNumber / endCustomerOrderNumber."""
     updated = copy.deepcopy(body)
-    updated["customerOrderNumber"] = new_number
+    found_customer = False
     for key in list(updated):
-        if key.lower() == "endcustomerordernumber":
+        lower = key.lower()
+        if lower == "customerordernumber":
             updated[key] = new_number
+            found_customer = True
+        elif lower == "endcustomerordernumber":
+            updated[key] = new_number
+    if not found_customer:
+        updated["customerOrderNumber"] = new_number
     return updated
 
 
@@ -87,9 +134,18 @@ def resolve_replay_order_number(
     use_random: bool = False,
     max_length: int = MAX_CUSTOMER_ORDER_NUMBER_LENGTH,
 ) -> str:
-    """Pick the replay order number from CLI/UI mode flags."""
+    """Pick the replay order number from CLI/UI mode flags.
+
+    One-up increments the PO currently in the curl. Random builds a new value
+    up to ``max_length`` (18). Both results stay within that limit.
+    """
+    source = (original or "").strip()
     if explicit and explicit.strip():
         return _clamp_order_number(explicit, max_length)
     if use_random:
-        return random_order_number(prefix=original, max_length=max_length)
-    return _clamp_order_number(bump_trailing_number(original), max_length)
+        value = random_order_number(prefix=source, max_length=max_length)
+        if value != source:
+            return value
+        return random_order_number(prefix="R", max_length=max_length)
+    bumped = bump_trailing_number(source, max_length=max_length)
+    return _clamp_order_number(bumped, max_length)

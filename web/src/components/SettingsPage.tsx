@@ -127,6 +127,35 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     }
   }
 
+  const persistReplayDefaults = async (patch: {
+    default_mode?: ReplayMode
+    default_target?: OrderCreateTarget
+    default_modify_target?: OrderModifyTarget
+  }) => {
+    const next = { ...form, ...patch }
+    setForm((prev) => ({ ...prev, ...patch }))
+    onSaved({
+      mode: next.default_mode,
+      target: next.default_target,
+      modifyTarget: next.default_modify_target,
+    })
+    try {
+      const data = await updateSettings({
+        default_target: next.default_target,
+        default_modify_target: next.default_modify_target,
+        default_mode: next.default_mode,
+      })
+      applySettings(data)
+      onSaved({
+        mode: data.default_mode,
+        target: data.default_target,
+        modifyTarget: data.default_modify_target,
+      })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save settings')
+    }
+  }
+
   return (
     <section className="settings-page">
       <h1 className="settings-title">Settings</h1>
@@ -144,7 +173,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
           <legend>Replay defaults</legend>
           <p className="settings-hint">
             Home uses these when building and re-submitting orders. Customer PO Number (One-up or
-            Random) is applied on Re-Submit.
+            Random) is applied to the PO currently in the curl on Re-Submit. One-up increments that
+            PO; Random replaces it. Both stay at most 18 characters.
           </p>
           <div className="settings-radio-groups">
             <fieldset className="settings-radio-group">
@@ -154,7 +184,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   type="radio"
                   name="default_target"
                   checked={form.default_target === 'uat'}
-                  onChange={() => setForm((prev) => ({ ...prev, default_target: 'uat' }))}
+                  onChange={() => void persistReplayDefaults({ default_target: 'uat' })}
                 />
                 UAT
               </label>
@@ -163,7 +193,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   type="radio"
                   name="default_target"
                   checked={form.default_target === 'qa'}
-                  onChange={() => setForm((prev) => ({ ...prev, default_target: 'qa' }))}
+                  onChange={() => void persistReplayDefaults({ default_target: 'qa' })}
                 />
                 QA
               </label>
@@ -175,9 +205,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   type="radio"
                   name="default_modify_target"
                   checked={form.default_modify_target === 'test'}
-                  onChange={() =>
-                    setForm((prev) => ({ ...prev, default_modify_target: 'test' }))
-                  }
+                  onChange={() => void persistReplayDefaults({ default_modify_target: 'test' })}
                 />
                 api-test
               </label>
@@ -186,9 +214,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   type="radio"
                   name="default_modify_target"
                   checked={form.default_modify_target === 'qa1'}
-                  onChange={() =>
-                    setForm((prev) => ({ ...prev, default_modify_target: 'qa1' }))
-                  }
+                  onChange={() => void persistReplayDefaults({ default_modify_target: 'qa1' })}
                 />
                 api-qa1
               </label>
@@ -200,7 +226,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   type="radio"
                   name="default_mode"
                   checked={form.default_mode === 'one_up'}
-                  onChange={() => setForm((prev) => ({ ...prev, default_mode: 'one_up' }))}
+                  onChange={() => void persistReplayDefaults({ default_mode: 'one_up' })}
                 />
                 One-up
               </label>
@@ -209,7 +235,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   type="radio"
                   name="default_mode"
                   checked={form.default_mode === 'random'}
-                  onChange={() => setForm((prev) => ({ ...prev, default_mode: 'random' }))}
+                  onChange={() => void persistReplayDefaults({ default_mode: 'random' })}
                 />
                 Random
               </label>

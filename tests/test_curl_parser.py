@@ -33,6 +33,19 @@ def test_parse_order_create_curl_roundtrip():
     assert parsed.authorization.startswith("Basic ")
 
 
+def test_parse_order_create_curl_accepts_data_flag():
+    curl = """\
+curl --location 'https://example.test/resellers/v6/orders' \\
+--header 'Content-Type: application/json' \\
+--data '{
+    "customerOrderNumber": "P27951376",
+    "endCustomerOrderNumber": "P27951376"
+}'
+"""
+    parsed = parse_order_create_curl(curl)
+    assert parsed.body["customerOrderNumber"] == "P27951376"
+
+
 def test_extract_globalorderid():
     payload = {
         "responsepreamble": {

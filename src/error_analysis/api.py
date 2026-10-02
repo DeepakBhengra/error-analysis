@@ -188,7 +188,7 @@ class OrderCurlRequest(BaseModel):
 
 class ResubmitRequest(BaseModel):
     curl: str = Field(..., min_length=1)
-    mode: Mode = "one_up"
+    mode: Mode | None = None
     env: str | None = None
     poll_interval: float = 15.0
     timeout: float = 180.0
@@ -953,7 +953,12 @@ def resubmit_curl(payload: ResubmitRequest) -> dict[str, Any]:
         result = run_replay_from_curl(
             settings,
             payload.curl,
-            use_random=_normalize_mode(payload.mode) == "random",
+            use_random=_normalize_mode(
+                payload.mode
+                if payload.mode is not None
+                else settings.default_replay_mode
+            )
+            == "random",
             env=payload.env,
             # Keep last resubmit artifacts (body/curl/result) for diagnosis.
             out_dir=Path("results/last-resubmit"),

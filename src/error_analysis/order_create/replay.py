@@ -27,6 +27,7 @@ from error_analysis.order_create.curl_builder import (
 from error_analysis.order_create.curl_parser import parse_order_create_curl
 from error_analysis.order_create.order_number import (
     apply_order_number,
+    customer_order_number_from_body,
     resolve_replay_order_number,
 )
 from error_analysis.error_lookup.client import is_two_char_error_code
@@ -542,12 +543,11 @@ def run_replay(
         target=target,
     )
 
-    original = built.body.get("customerOrderNumber")
-    if not isinstance(original, str) or not original.strip():
+    original = customer_order_number_from_body(built.body)
+    if not original:
         raise OrderCreateCurlError(
             "Order Create body is missing customerOrderNumber."
         )
-    original = original.strip()
     new_number = resolve_replay_order_number(
         original,
         explicit=order_number,
@@ -602,12 +602,11 @@ def run_replay_from_curl(
     """
     parsed = parse_order_create_curl(curl_text)
 
-    original = parsed.body.get("customerOrderNumber")
-    if not isinstance(original, str) or not original.strip():
+    original = customer_order_number_from_body(parsed.body)
+    if not original:
         raise OrderCreateCurlError(
             "Order Create body is missing customerOrderNumber."
         )
-    original = original.strip()
     new_number = resolve_replay_order_number(
         original,
         explicit=order_number,
