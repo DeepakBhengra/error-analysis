@@ -23,6 +23,8 @@
   --warn-border: #fde68a;
   --warn-text: #92400e;
   --table-header-bar: #2563eb;
+  --results-head-height: 48px;
+  --results-row-height: 56px;
   --shadow-sm: 0 1px 2px rgba(15, 39, 68, 0.06);
   --shadow-md: 0 4px 16px rgba(15, 39, 68, 0.08);
   --radius: 10px;
@@ -892,19 +894,26 @@ body {
   margin-bottom: 0;
 }
 
+.table-wrap-scroll {
+  max-height: calc(var(--results-head-height) + (5 * var(--results-row-height)));
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
 .results-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   min-width: 720px;
 }
 
 .results-table thead {
-  border-top: 3px solid var(--table-header-bar);
+  border-top: none;
 }
 
 .results-table th {
   text-align: left;
-  padding: 12px 14px;
+  padding: 15px 14px 12px;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -913,12 +922,18 @@ body {
   border-bottom: 1px solid var(--border);
   background: #fff;
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: var(--results-head-height);
+  box-shadow: inset 0 3px 0 var(--table-header-bar), 0 1px 0 var(--border);
 }
 
 .results-table td {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-soft);
-  vertical-align: top;
+  vertical-align: middle;
+  height: var(--results-row-height);
 }
 
 .results-table tbody tr:hover {
@@ -935,6 +950,7 @@ body {
   text-align: center;
   color: var(--text-muted);
   padding: 28px 14px !important;
+  height: auto;
 }
 
 .error-code-link {
@@ -1263,7 +1279,7 @@ body {
   min-height: 280px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 14px;
+  padding: 14px 44px 14px 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -1292,6 +1308,12 @@ body {
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+.curl-response-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .curl-response-header h3 {
@@ -1335,7 +1357,7 @@ body {
   margin: 0;
   max-height: 320px;
   overflow: auto;
-  padding: 10px 12px;
+  padding: 10px 44px 10px 12px;
   border: 1px solid var(--border);
   background: #fff;
   color: var(--text);
@@ -1344,6 +1366,45 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.copyable-panel {
+  position: relative;
+}
+
+.btn-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-copy:hover:not(:disabled) {
+  color: var(--navy);
+  border-color: var(--accent);
+}
+
+.btn-copy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-copy.is-copied {
+  color: var(--success-text);
+  border-color: var(--success-border);
+  background: var(--success-bg);
 }
 
 @media (max-width: 960px) {

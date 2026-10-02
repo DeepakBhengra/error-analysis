@@ -14,7 +14,7 @@ export function ResultsTable({
   resolvingCode,
 }: ResultsTableProps) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap table-wrap-scroll">
       <table className="results-table">
         <thead>
           <tr>
