@@ -489,8 +489,157 @@ def test_resubmit_does_not_poll_datadog(monkeypatch):
     data = response.json()
     assert data["outcome"] == "SUCCESS"
     assert data["globalorderid"] == "30-FAST1"
+    assert data["statuscode"] == "200"
+    assert data["responsemessage"] == "SUCCESS"
     assert data["http_status"] == 200
     assert data["http_body"] == http_body
+    assert "Success report: SUCCESS." in data["message"]
+    assert "Code: 200." in data["message"]
+    assert "Impulse Order Number: 30-FAST1." in data["message"]
+
+
+def test_resubmit_rest_success_shows_impulse_message_and_code(monkeypatch):
+    """REST v6 success has numeric ingramOrderNumber; UI must show 30-Q6HX2."""
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    http_body = {
+        "customerOrderNumber": "PO-00008219",
+        "orders": [{"ingramOrderNumber": "7109517746"}],
+    }
+
+    def fake_post(**kwargs):
+        return 200, http_body
+
+    def fake_impulse_poll(*args, **kwargs):
+        return [
+            {
+                "log_id": "v6",
+                "service": "OrderCreate_v6_0",
+                "ResponseLogPayload": {
+                    "serviceresponse": {
+                        "responsepreamble": {
+                            "responsestatus": "SUCCESS",
+                            "statuscode": "200",
+                            "responsemessage": "SUCCESS",
+                        },
+                        "ordersummary": {
+                            "ordercreateresponse": [{"globalorderid": "30-Q6HX2"}]
+                        },
+                    }
+                },
+            }
+        ]
+
+    class FakeDatadogClient:
+        def __init__(self, _settings):
+            pass
+
+        def __enter__(self):
+            return MagicMock()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.post_order_create",
+        fake_post,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_impulse_order_id",
+        fake_impulse_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.DatadogClient",
+        FakeDatadogClient,
+    )
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={"curl": _SAMPLE_CURL, "mode": "one_up"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["outcome"] == "SUCCESS"
+    assert data["responsestatus"] == "SUCCESS"
+    assert data["statuscode"] == "200"
+    assert data["responsemessage"] == "SUCCESS"
+    assert data["globalorderid"] == "30-Q6HX2"
+    assert data["globalorderid"] != "7109517746"
+    assert "Success report: SUCCESS." in data["message"]
+    assert "Code: 200." in data["message"]
+    assert "Impulse Order Number: 30-Q6HX2." in data["message"]
+
+
+def test_resubmit_rest_success_omits_numeric_ingram_when_datadog_has_no_impulse(
+    monkeypatch,
+):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    http_body = {
+        "customerOrderNumber": "PO-00008219",
+        "orders": [{"ingramOrderNumber": "7109517746"}],
+    }
+
+    def fake_post(**kwargs):
+        return 200, http_body
+
+    def fake_impulse_poll(*args, **kwargs):
+        return []
+
+    class FakeDatadogClient:
+        def __init__(self, _settings):
+            pass
+
+        def __enter__(self):
+            return MagicMock()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.post_order_create",
+        fake_post,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_impulse_order_id",
+        fake_impulse_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.DatadogClient",
+        FakeDatadogClient,
+    )
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={"curl": _SAMPLE_CURL, "mode": "one_up"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["outcome"] == "SUCCESS"
+    assert data["statuscode"] == "200"
+    assert data["responsemessage"] == "SUCCESS"
+    assert data["globalorderid"] == ""
+    assert "7109517746" not in (data["message"] or "")
+    assert "Success report: SUCCESS." in data["message"]
+    assert "Code: 200." in data["message"]
 
 
 _PO_CURL = """\
@@ -582,6 +731,12 @@ def test_api_response_keeps_replayed_customer_order_number(repair_settings):
     payload = _api_response(result, settings=repair_settings)
     assert payload["customerOrderNumber"] == "P27951377"
     assert payload["originalCustomerOrderNumber"] == "P27951376"
+    assert payload["globalorderid"] == "30-Q6HX2"
+    assert payload["statuscode"] == "200"
+    assert payload["responsemessage"] == "SUCCESS"
+    assert "Success report: SUCCESS." in payload["message"]
+    assert "Code: 200." in payload["message"]
+    assert "Impulse Order Number: 30-Q6HX2." in payload["message"]
 
 
 def test_resubmit_one_up_updates_customer_and_end_po(monkeypatch):

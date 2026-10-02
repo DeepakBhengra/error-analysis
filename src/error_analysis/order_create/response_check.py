@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 from error_analysis.extractors.order_create_v2_response import (
+    club_impulse_order_number,
     extract_v2_response_from_record,
     extract_xml_statuscode,
     parse_v2_response_text,
@@ -63,21 +65,50 @@ def extract_preamble(payload: Any) -> dict[str, Any] | None:
     return None
 
 
-_GLOBAL_ORDER_ID_KEYS = (
+# Clubbed Impulse Order Number: 30-Q6HX2, 60-75684, 29-44694-11.
+# REST ``ingramOrderNumber`` values like 7109517746 are not this form.
+_IMPULSE_ORDER_NUMBER_RE = re.compile(
+    r"^\d{1,4}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+)
+
+_IMPULSE_ORDER_ID_KEYS = (
     "globalorderid",
     "globalOrderId",
     "invoicingsystemorderid",
-    "ingramOrderNumber",
+    "impulseOrderNumber",
 )
 
 
+def is_impulse_order_number(value: Any) -> bool:
+    """True for Datadog/clubbed Impulse Order Number (e.g. ``30-Q6HX2``)."""
+    text = _as_str(value)
+    return bool(text and _IMPULSE_ORDER_NUMBER_RE.fullmatch(text))
+
+
+def _impulse_from_mapping(entry: dict[str, Any]) -> str:
+    for key in _IMPULSE_ORDER_ID_KEYS:
+        value = _as_str(entry.get(key))
+        if is_impulse_order_number(value):
+            return value
+    clubbed = club_impulse_order_number(
+        _as_str(entry.get("orderBranchNumber") or entry.get("orderbranchnumber")),
+        _as_str(entry.get("orderNumber") or entry.get("ordernumber")),
+    )
+    if is_impulse_order_number(clubbed):
+        return clubbed
+    ingram = _as_str(entry.get("ingramOrderNumber"))
+    if is_impulse_order_number(ingram):
+        return ingram
+    return ""
+
+
 def extract_globalorderid(payload: Any) -> str:
-    """Pull the impulse/global order id from a response payload.
+    """Pull the Impulse Order Number (e.g. ``30-Q6HX2``) from a response payload.
 
     Handles the Datadog log shape (``ordersummary.ordercreateresponse[*]``,
     optionally wrapped in ``serviceresponse``) as well as REST-style bodies
-    (``orders[*].ingramOrderNumber`` / camelCase keys). Every entry is checked;
-    the first nonblank id wins, then summary-level keys are used as fallback.
+    with a clubbed ``ingramOrderNumber`` (``20-ABC12``). Numeric REST ids such
+    as ``7109517746`` are ignored — those are not Impulse Order Numbers.
     """
     payload = _unwrap_serviceresponse(payload)
     if not isinstance(payload, dict):
@@ -98,18 +129,15 @@ def extract_globalorderid(payload: Any) -> str:
                 entries = value
                 break
 
-        for key in _GLOBAL_ORDER_ID_KEYS:
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                value = _as_str(entry.get(key))
-                if value:
-                    return value
+        for entry in entries:
+            if isinstance(entry, dict):
+                found = _impulse_from_mapping(entry)
+                if found:
+                    return found
 
-        for key in _GLOBAL_ORDER_ID_KEYS:
-            value = _as_str(container.get(key))
-            if value:
-                return value
+        found = _impulse_from_mapping(container)
+        if found:
+            return found
 
     return ""
 
@@ -134,7 +162,7 @@ def find_globalorderid_in_records(records: list[dict[str, Any]]) -> str:
         parsed = extract_v2_response_from_record(record)
         if parsed:
             impulse = _as_str(parsed.get("impulseOrderNumber"))
-            if impulse:
+            if is_impulse_order_number(impulse):
                 return impulse
     return ""
 
@@ -200,6 +228,10 @@ def check_from_http_body(
                 source_service="http",
             )
 
+    rest_success = _check_rest_http_success(http_body, http_status=http_status)
+    if rest_success is not None:
+        return rest_success
+
     if http_status is not None and http_status >= 400:
         message = _as_str(http_body) if not isinstance(http_body, dict) else "Request failed"
         return ResponseCheckResult(
@@ -216,6 +248,71 @@ def check_from_http_body(
         )
 
     return None
+
+
+def _check_rest_http_success(
+    http_body: Any,
+    *,
+    http_status: int | None = None,
+) -> ResponseCheckResult | None:
+    """Treat reseller v6 REST success bodies as SUCCESS with message/code.
+
+    Public Order Create returns ``orders[].ingramOrderNumber`` (often a numeric
+    REST id) without Datadog ``responsepreamble``. Classify that as SUCCESS so
+    the UI can show status SUCCESS, code 200, and message SUCCESS. Impulse
+    Order Number is filled only when the id is clubbed (``30-Q6HX2``).
+    """
+    if http_status is not None and not (200 <= http_status < 300):
+        return None
+    payload = _unwrap_serviceresponse(http_body)
+    if not isinstance(payload, dict):
+        return None
+    orders = payload.get("orders")
+    if not isinstance(orders, list) or not orders:
+        return None
+
+    accepted = False
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        has_id = any(
+            _as_str(order.get(key))
+            for key in ("ingramOrderNumber", "globalorderid", "globalOrderId")
+        )
+        if not has_id:
+            continue
+        errs = order.get("numberOfLinesWithError")
+        if errs not in (0, "0", None, ""):
+            try:
+                if int(str(errs).strip()) > 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        accepted = True
+        break
+    if not accepted:
+        return None
+
+    statuscode = _as_str(http_status) if http_status is not None else "200"
+    if not statuscode:
+        statuscode = "200"
+    payload_dict = payload if isinstance(payload, dict) else None
+    return ResponseCheckResult(
+        outcome="SUCCESS",
+        statuscode=statuscode,
+        responsemessage="SUCCESS",
+        errorcode="",
+        responsestatus="SUCCESS",
+        globalorderid=extract_globalorderid(http_body),
+        raw_preamble={
+            "responsestatus": "SUCCESS",
+            "statuscode": statuscode,
+            "responsemessage": "SUCCESS",
+        },
+        response_payload=payload_dict,
+        source_log_id=None,
+        source_service="http",
+    )
 
 
 def classify_v2_request_status(request_status: str, return_code: str) -> Outcome:
@@ -438,7 +535,9 @@ def build_result_payload(
     resolved_status = responsestatus
     if not resolved_status and outcome in ("SUCCESS", "FAILED"):
         resolved_status = outcome
-    resolved_global = globalorderid or extract_globalorderid(response_payload)
+    resolved_global = (
+        globalorderid if is_impulse_order_number(globalorderid) else ""
+    ) or extract_globalorderid(response_payload)
     result: dict[str, Any] = {
         "sourceSearchText": source_search_text,
         "originalCustomerOrderNumber": original_customer_order_number,

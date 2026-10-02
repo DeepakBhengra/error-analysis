@@ -451,7 +451,7 @@ def test_extract_globalorderid_serviceresponse_wrapper_and_fallbacks():
 def test_extract_globalorderid_rest_shapes():
     from error_analysis.order_create.response_check import extract_globalorderid
 
-    # Public reseller v6 REST body.
+    # Public reseller v6 REST body with a clubbed Impulse Order Number.
     assert (
         extract_globalorderid(
             {"customerOrderNumber": "PO1", "orders": [{"ingramOrderNumber": "20-ABC12"}]}
@@ -464,6 +464,60 @@ def test_extract_globalorderid_rest_shapes():
         extract_globalorderid({"orderSummary": {"globalOrderId": "41-SUMM"}})
         == "41-SUMM"
     )
+    # Numeric REST Ingram order id is not the Impulse Order Number.
+    assert (
+        extract_globalorderid(
+            {"orders": [{"ingramOrderNumber": "7109517746"}]}
+        )
+        == ""
+    )
+    assert (
+        extract_globalorderid(
+            {
+                "orders": [
+                    {
+                        "ingramOrderNumber": "7109517746",
+                        "globalorderid": "30-Q6HX2",
+                    }
+                ]
+            }
+        )
+        == "30-Q6HX2"
+    )
+
+
+def test_is_impulse_order_number():
+    from error_analysis.order_create.response_check import is_impulse_order_number
+
+    assert is_impulse_order_number("30-Q6HX2")
+    assert is_impulse_order_number("60-75684")
+    assert is_impulse_order_number("29-44694-11")
+    assert not is_impulse_order_number("7109517746")
+    assert not is_impulse_order_number("")
+    assert not is_impulse_order_number("PO-00008219")
+
+
+def test_check_from_http_body_rest_success_uses_impulse_not_numeric_ingram():
+    body = {
+        "customerOrderNumber": "PO-00008219",
+        "orders": [{"ingramOrderNumber": "7109517746"}],
+    }
+    check = check_from_http_body(body, http_status=200)
+    assert check is not None
+    assert check.outcome == "SUCCESS"
+    assert check.statuscode == "200"
+    assert check.responsemessage == "SUCCESS"
+    assert check.responsestatus == "SUCCESS"
+    assert check.globalorderid == ""
+
+    clubbed = {
+        "customerOrderNumber": "PO1",
+        "orders": [{"ingramOrderNumber": "30-Q6HX2"}],
+    }
+    check = check_from_http_body(clubbed, http_status=200)
+    assert check is not None
+    assert check.outcome == "SUCCESS"
+    assert check.globalorderid == "30-Q6HX2"
 
 
 def test_find_globalorderid_in_records_scans_all_logs():

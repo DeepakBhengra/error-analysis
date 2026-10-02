@@ -19,8 +19,8 @@ export function ResultsTable({
         <thead>
           <tr>
             <th>Status</th>
-            <th>Error Code</th>
-            <th>Error Message</th>
+            <th>Code</th>
+            <th>Message</th>
             <th>Impulse Order Number</th>
             <th>Customer Order Number</th>
           </tr>
