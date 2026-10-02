@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 
 import { guessOrderTypeFromCurl } from '../guessOrderType'
 import type { CurlHttpResponse, CurlPanelTab } from '../types'
+import { CopyButton } from './CopyButton'
 
 interface CurlEditorProps {
   activeTab: CurlPanelTab
@@ -150,36 +151,41 @@ export function CurlEditor({
           )}
         </div>
       ) : null}
-      <textarea
-        className="curl-textarea"
-        value={curl}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-        disabled={loading}
-        placeholder={
-          activeTab === 'modify'
-            ? 'Order Modify curl will appear here after RUN…'
-            : 'Curl will appear here after RUN prepares a v6 request…'
-        }
-        rows={16}
-      />
+      <div className="copyable-panel">
+        <textarea
+          className="curl-textarea"
+          value={curl}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          disabled={loading}
+          placeholder={
+            activeTab === 'modify'
+              ? 'Order Modify curl will appear here after RUN…'
+              : 'Curl will appear here after RUN prepares a v6 request…'
+          }
+          rows={16}
+        />
+        <CopyButton text={curl} label="Copy curl" />
+      </div>
       {httpResponse ? (
         <div className="curl-response-panel">
           <div className="curl-response-header">
             <h3>Postman / API Response</h3>
-            {httpResponse.httpStatus != null ? (
-              <span
-                className={
-                  httpResponse.httpStatus >= 400
-                    ? 'curl-response-status curl-response-status-error'
-                    : 'curl-response-status curl-response-status-ok'
-                }
-              >
-                HTTP {httpResponse.httpStatus}
-              </span>
-            ) : (
-              <span className="curl-response-status">No HTTP status</span>
-            )}
+            <div className="curl-response-header-actions">
+              {httpResponse.httpStatus != null ? (
+                <span
+                  className={
+                    httpResponse.httpStatus >= 400
+                      ? 'curl-response-status curl-response-status-error'
+                      : 'curl-response-status curl-response-status-ok'
+                  }
+                >
+                  HTTP {httpResponse.httpStatus}
+                </span>
+              ) : (
+                <span className="curl-response-status">No HTTP status</span>
+              )}
+            </div>
           </div>
           {httpResponse.curlRepaired ? (
             <p className="curl-repair-note">
@@ -201,9 +207,12 @@ export function CurlEditor({
           !httpResponse.unresolvedFields.length ? (
             <p className="curl-repair-note">{httpResponse.repairMessage}</p>
           ) : null}
-          <pre className="curl-response-body">
-            {responseText || '(empty response body)'}
-          </pre>
+          <div className="copyable-panel">
+            <pre className="curl-response-body">
+              {responseText || '(empty response body)'}
+            </pre>
+            <CopyButton text={responseText} label="Copy API response" />
+          </div>
         </div>
       ) : null}
     </section>
