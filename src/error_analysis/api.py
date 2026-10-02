@@ -945,19 +945,15 @@ def resolve_error(payload: ErrorLookupRequest) -> dict[str, Any]:
 @app.post("/api/resubmit")
 def resubmit_curl(payload: ResubmitRequest) -> dict[str, Any]:
     settings = _load_settings()
-    poll_from, poll_to = default_time_window()
     try:
         result = run_replay_from_curl(
             settings,
             payload.curl,
             use_random=_normalize_mode(payload.mode) == "random",
-            from_time=poll_from,
-            to_time=poll_to,
-            poll_interval=payload.poll_interval,
-            timeout=payload.timeout,
             env=payload.env,
-            # Keep last resubmit artifacts (body/curl/logs/result) for diagnosis.
+            # Keep last resubmit artifacts (body/curl/result) for diagnosis.
             out_dir=Path("results/last-resubmit"),
+            wait_for_logs=False,
         )
     except OrderCreateCurlError as exc:
         logger.warning("resubmit curl parse/setup failed: %s", exc)
