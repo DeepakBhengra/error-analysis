@@ -433,6 +433,66 @@ def test_resubmit_success_falls_back_to_http_body_globalorderid(monkeypatch):
     assert data["globalorderid"] == "41-PBWWJ"
 
 
+def test_resubmit_does_not_poll_datadog(monkeypatch):
+    monkeypatch.setenv("DD_API_KEY", "test-dd-api")
+    monkeypatch.setenv("DD_APP_KEY", "test-dd-app")
+    monkeypatch.setenv("ORDER_CREATE_USERNAME", "APPIMEAI")
+    monkeypatch.setenv("ORDER_CREATE_PASSWORD", "secret")
+
+    from error_analysis import api as api_module
+    from error_analysis.config import Settings
+
+    monkeypatch.setattr(api_module, "_load_settings", lambda: Settings())
+
+    http_body = {
+        "serviceresponse": {
+            "responsepreamble": {
+                "responsestatus": "SUCCESS",
+                "statuscode": "200",
+                "responsemessage": "SUCCESS",
+            },
+            "ordersummary": {
+                "ordercreateresponse": [{"globalorderid": "30-FAST1"}]
+            },
+        }
+    }
+
+    def fake_post(**kwargs):
+        return 200, http_body
+
+    def fake_poll(*args, **kwargs):
+        raise AssertionError("Re-Submit must not poll Datadog")
+
+    class FakeDatadogClient:
+        def __init__(self, _settings):
+            raise AssertionError("Re-Submit must not open Datadog")
+
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.post_order_create",
+        fake_post,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.poll_response_logs",
+        fake_poll,
+    )
+    monkeypatch.setattr(
+        "error_analysis.order_create.replay.DatadogClient",
+        FakeDatadogClient,
+    )
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/api/resubmit",
+        json={"curl": _SAMPLE_CURL, "mode": "one_up"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["outcome"] == "SUCCESS"
+    assert data["globalorderid"] == "30-FAST1"
+    assert data["http_status"] == 200
+    assert data["http_body"] == http_body
+
+
 _PO_CURL = """\
 curl --location 'https://example.test/resellers/v6/orders' \\
 --header 'Content-Type: application/json' \\

@@ -33,6 +33,7 @@ from error_analysis.order_create.response_check import (
     build_error_report,
     build_result_payload,
     build_success_summary,
+    check_from_http_body,
     extract_globalorderid,
     find_globalorderid_in_records,
     find_response_check,
@@ -231,6 +232,7 @@ def _complete_replay(
     out_dir: Path | None,
     source_search_text: str | None,
     authorization: str | None = None,
+    wait_for_logs: bool = True,
 ) -> ReplayResult:
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -249,35 +251,44 @@ def _complete_replay(
         authorization=authorization,
     )
 
-    window_from, window_to = default_time_window()
-    poll_from = from_time or window_from
-    poll_to = to_time or window_to
-
-    with DatadogClient(settings) as client:
-        fetched_records = poll_response_logs(
-            client,
-            settings,
-            order_number=new_number,
-            from_time=poll_from,
-            to_time=poll_to,
-            poll_interval=poll_interval,
-            timeout=timeout,
-            env=env,
-        )
+    fetched_records: list[dict[str, Any]] = []
+    if wait_for_logs:
+        window_from, window_to = default_time_window()
+        poll_from = from_time or window_from
+        poll_to = to_time or window_to
+        with DatadogClient(settings) as client:
+            fetched_records = poll_response_logs(
+                client,
+                settings,
+                order_number=new_number,
+                from_time=poll_from,
+                to_time=poll_to,
+                poll_interval=poll_interval,
+                timeout=timeout,
+                env=env,
+            )
+        check = find_response_check(fetched_records)
+    else:
+        check = check_from_http_body(http_body, http_status=http_status)
 
     if out_dir is not None:
         _write_json(out_dir / "order-create-replay-logs.json", fetched_records)
 
-    check = find_response_check(fetched_records)
     if check is None:
+        if wait_for_logs:
+            outcome = "TIMEOUT"
+            message = "No ResponseLogPayload with responsepreamble found before timeout."
+        else:
+            outcome = "UNKNOWN"
+            message = "Order Create HTTP response had no responsepreamble."
         summary = build_result_payload(
-            outcome="TIMEOUT",
+            outcome=outcome,
             customer_order_number=new_number,
             original_customer_order_number=original,
             source_search_text=source_search_text,
             http_status=http_status,
             http_body=http_body,
-            message="No ResponseLogPayload with responsepreamble found before timeout.",
+            message=message,
         )
         _finalize_artifacts(out_dir, summary)
         return ReplayResult(
@@ -289,7 +300,7 @@ def _complete_replay(
             records=fetched_records,
             check=None,
             summary=summary,
-            outcome="TIMEOUT",
+            outcome=outcome,
             curl=curl_text,
         )
 
@@ -467,8 +478,14 @@ def run_replay_from_curl(
     env: str | None = None,
     out_dir: Path | None = None,
     source_search_text: str | None = None,
+    wait_for_logs: bool = True,
 ) -> ReplayResult:
-    """Parse an edited curl, bump/randomize customerOrderNumber, POST + poll."""
+    """Parse an edited curl, bump/randomize customerOrderNumber, then POST.
+
+    When ``wait_for_logs`` is true (CLI replay-order), poll Datadog for the
+    response preamble. UI Re-Submit sets it false so the call returns as soon
+    as the Order Create HTTP response arrives, like Postman.
+    """
     parsed = parse_order_create_curl(curl_text)
 
     original = parsed.body.get("customerOrderNumber")
@@ -529,4 +546,5 @@ def run_replay_from_curl(
         out_dir=out_dir,
         source_search_text=source_search_text,
         authorization=authorization,
+        wait_for_logs=wait_for_logs,
     )

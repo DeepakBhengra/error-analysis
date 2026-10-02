@@ -15,6 +15,7 @@ from error_analysis.order_create.response_check import (
     build_error_report,
     build_result_payload,
     build_success_summary,
+    check_from_http_body,
     classify_preamble,
     find_response_check,
 )
@@ -125,6 +126,43 @@ def test_classify_preamble_failed():
         )
         == "FAILED"
     )
+
+
+def test_check_from_http_body_success_preamble():
+    body = {
+        "serviceresponse": {
+            "responsepreamble": {
+                "responsestatus": "SUCCESS",
+                "statuscode": "200",
+                "responsemessage": "SUCCESS",
+            },
+            "ordersummary": {
+                "ordercreateresponse": [{"globalorderid": "30-Q6HX2"}]
+            },
+        }
+    }
+    check = check_from_http_body(body, http_status=200)
+    assert check is not None
+    assert check.outcome == "SUCCESS"
+    assert check.globalorderid == "30-Q6HX2"
+
+
+def test_check_from_http_body_validation_errors():
+    check = check_from_http_body(
+        {
+            "errors": [
+                {
+                    "message": "Validation failed",
+                    "fields": [{"field": "IM-CorrelationId", "value": ""}],
+                }
+            ]
+        },
+        http_status=400,
+    )
+    assert check is not None
+    assert check.outcome == "FAILED"
+    assert check.responsemessage == "Validation failed"
+    assert check.statuscode == "400"
 
 
 def test_classify_preamble_unknown():

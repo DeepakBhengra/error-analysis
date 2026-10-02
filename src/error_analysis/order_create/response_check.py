@@ -155,6 +155,69 @@ def classify_preamble(preamble: dict[str, Any]) -> Outcome:
     return "UNKNOWN"
 
 
+def check_from_http_body(
+    http_body: Any,
+    *,
+    http_status: int | None = None,
+) -> ResponseCheckResult | None:
+    """Classify an Order Create HTTP response the same way Postman shows it.
+
+    Uses ``serviceresponse.responsepreamble`` when present. Validation-style
+    ``errors`` bodies and HTTP 4xx/5xx without a preamble are FAILED.
+    """
+    preamble = extract_preamble(http_body)
+    if preamble is not None:
+        payload = _unwrap_serviceresponse(http_body)
+        payload_dict = payload if isinstance(payload, dict) else None
+        return ResponseCheckResult(
+            outcome=classify_preamble(preamble),
+            statuscode=_as_str(preamble.get("statuscode")),
+            responsemessage=_as_str(preamble.get("responsemessage")),
+            errorcode=_as_str(preamble.get("errorcode")),
+            responsestatus=_as_str(preamble.get("responsestatus")),
+            globalorderid=extract_globalorderid(http_body),
+            raw_preamble=preamble,
+            response_payload=payload_dict,
+            source_log_id=None,
+            source_service="http",
+        )
+
+    if isinstance(http_body, dict):
+        errors = http_body.get("errors")
+        if isinstance(errors, list) and errors:
+            first = errors[0] if isinstance(errors[0], dict) else {}
+            message = _as_str(first.get("message")) or "Request failed"
+            return ResponseCheckResult(
+                outcome="FAILED",
+                statuscode=_as_str(http_status) or "400",
+                responsemessage=message,
+                errorcode="",
+                responsestatus="FAILED",
+                globalorderid=extract_globalorderid(http_body),
+                raw_preamble={},
+                response_payload=http_body,
+                source_log_id=None,
+                source_service="http",
+            )
+
+    if http_status is not None and http_status >= 400:
+        message = _as_str(http_body) if not isinstance(http_body, dict) else "Request failed"
+        return ResponseCheckResult(
+            outcome="FAILED",
+            statuscode=str(http_status),
+            responsemessage=message or f"HTTP {http_status}",
+            errorcode="",
+            responsestatus="FAILED",
+            globalorderid="",
+            raw_preamble={},
+            response_payload=http_body if isinstance(http_body, dict) else None,
+            source_log_id=None,
+            source_service="http",
+        )
+
+    return None
+
+
 def classify_v2_request_status(request_status: str, return_code: str) -> Outcome:
     status = _as_str(request_status).upper()
     code = _as_str(return_code)
