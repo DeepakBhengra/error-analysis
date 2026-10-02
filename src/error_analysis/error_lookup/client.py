@@ -23,6 +23,26 @@ def is_two_char_error_code(code: str) -> bool:
     return bool(_TWO_CHAR_CODE.match((code or "").strip()))
 
 
+def corora_code_from_statuscode(code: str) -> str:
+    """Normalize a ResponseLogPayload ``statuscode`` to a two-char CORORA code.
+
+    ``EM`` stays ``EM``. Longer codes such as ``LULAEN`` keep only the last two
+    characters (``EN``) when those match ``is_two_char_error_code``. Numeric
+    HTTP statuses such as ``400`` return empty so they are not treated as
+    CORORA codes.
+    """
+    text = (code or "").strip().upper()
+    if not text:
+        return ""
+    if is_two_char_error_code(text):
+        return text
+    if len(text) > 2:
+        tail = text[-2:]
+        if is_two_char_error_code(tail):
+            return tail
+    return ""
+
+
 def _paths_body(settings: Settings) -> dict[str, str]:
     return {
         "source_root": settings.lookup_source_root,

@@ -14,6 +14,7 @@ from error_analysis.order_create.response_check import (
     check_from_v2_xml,
     classify_v2_request_status,
     find_response_check,
+    find_two_char_statuscode_in_sources,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -200,6 +201,60 @@ def test_parse_tns_statuscode_fragment():
     assert parsed["responsestatus"] == "FAILED"
     assert parsed["returnCode"] == "EN"
     assert "SKU-NOTFOUND" in parsed["returnMessage"]
+
+
+def test_parse_tns_statuscode_lulaen_keeps_full_value():
+    text = (
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        "<tns:statuscode>LULAEN</tns:statuscode>"
+        "<tns:responsemessage>SKU-NOTFOUND    9DG827AA</tns:responsemessage>"
+    )
+    parsed = parse_v2_response_text(text)
+    assert parsed is not None
+    assert parsed["statuscode"] == "LULAEN"
+    assert parsed["returnCode"] == "LULAEN"
+
+
+def test_find_two_char_statuscode_maps_lulaen_to_en():
+    xml = (
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        "<tns:statuscode>LULAEN</tns:statuscode>"
+        "<tns:responsemessage>SKU-NOTFOUND    9DG827AA</tns:responsemessage>"
+    )
+    assert find_two_char_statuscode_in_sources(http_body=xml) == "EN"
+    assert find_two_char_statuscode_in_sources(
+        records=[{"message": xml, "ResponseLogPayload": xml}]
+    ) == "EN"
+
+
+def test_find_two_char_statuscode_keeps_em():
+    xml = (
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        "<tns:statuscode>EM</tns:statuscode>"
+        "<tns:responsemessage>CUSTOMER-PO-EXISTS</tns:responsemessage>"
+    )
+    assert find_two_char_statuscode_in_sources(http_body=xml) == "EM"
+
+
+def test_find_response_check_maps_lulaen_to_en():
+    xml = (
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        "<tns:statuscode>LULAEN</tns:statuscode>"
+        "<tns:responsemessage>SKU-NOTFOUND    9DG827AA</tns:responsemessage>"
+    )
+    records = [
+        {
+            "log_id": "xml-lulaen",
+            "message": xml,
+            "ResponseLogPayload": xml,
+        }
+    ]
+    check = find_response_check(records)
+    assert check is not None
+    assert check.outcome == "FAILED"
+    assert check.statuscode == "EN"
+    assert check.raw_preamble.get("originalStatuscode") == "LULAEN"
+    assert check.raw_preamble.get("mappedFromV2Statuscode") == "EN"
 
 
 def test_find_response_check_prefers_two_char_failed_over_numeric():
@@ -432,3 +487,41 @@ def test_find_response_check_maps_406_from_tns_statuscode_xml():
     assert check.source_log_id == "numeric"
     assert check.raw_preamble.get("mappedFromV2Statuscode") == "EN"
     assert check.raw_preamble.get("originalStatuscode") == "406"
+
+
+def test_poll_corora_statuscode_stops_on_lulaen_xml(monkeypatch):
+    from types import SimpleNamespace
+
+    from error_analysis.order_create import replay as replay_mod
+
+    xml = (
+        "<tns:responsepreamble>"
+        "<tns:responsestatus>FAILED</tns:responsestatus>"
+        "<tns:statuscode>LULAEN</tns:statuscode>"
+        "<tns:responsemessage>SKU-NOTFOUND    9DG827AA</tns:responsemessage>"
+        "</tns:responsepreamble>"
+    )
+    empty = {"log_id": "empty", "ResponseLogPayload": None}
+    found = {"log_id": "xml", "message": xml, "ResponseLogPayload": xml}
+    batches = [[empty], [empty, found]]
+    calls = {"n": 0}
+
+    def fake_fetch(client, settings, **kwargs):
+        batch = batches[min(calls["n"], len(batches) - 1)]
+        calls["n"] += 1
+        return SimpleNamespace(records=batch)
+
+    monkeypatch.setattr(replay_mod, "fetch_request_records", fake_fetch)
+    monkeypatch.setattr(replay_mod, "resolve_service_filter", lambda s: None)
+
+    records = replay_mod.poll_corora_statuscode(
+        client=None,
+        settings=None,
+        order_number="PO-SKU",
+        from_time="2026-07-18T00:00:00Z",
+        to_time="2026-07-18T23:59:59Z",
+        poll_interval=0.01,
+        timeout=2.0,
+    )
+    assert find_two_char_statuscode_in_sources(records=records) == "EN"
+    assert calls["n"] == 2

@@ -30,7 +30,7 @@ from error_analysis.order_create.order_number import (
     customer_order_number_from_body,
     resolve_replay_order_number,
 )
-from error_analysis.error_lookup.client import is_two_char_error_code
+from error_analysis.error_lookup.client import corora_code_from_statuscode
 from error_analysis.order_create.response_check import (
     ResponseCheckResult,
     build_error_report,
@@ -40,6 +40,7 @@ from error_analysis.order_create.response_check import (
     extract_globalorderid,
     find_globalorderid_in_records,
     find_response_check,
+    find_two_char_statuscode_in_sources,
     is_impulse_order_number,
     is_v6_response_service,
 )
@@ -190,7 +191,7 @@ def poll_response_logs(
         last_records = fetched.records
         check = find_response_check(last_records)
         if check is not None:
-            needs_two_char = check.outcome == "FAILED" and not is_two_char_error_code(
+            needs_two_char = check.outcome == "FAILED" and not corora_code_from_statuscode(
                 check.statuscode
             )
             needs_v6 = not is_v6_response_service(check.source_service)
@@ -240,6 +241,41 @@ def poll_impulse_order_id(
         )
         last_records = fetched.records
         if is_impulse_order_number(find_globalorderid_in_records(last_records)):
+            return last_records
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return last_records
+        time.sleep(min(poll_interval, remaining))
+
+
+def poll_corora_statuscode(
+    client: DatadogClient,
+    settings: Settings,
+    *,
+    order_number: str,
+    from_time: str,
+    to_time: str,
+    poll_interval: float,
+    timeout: float,
+    env: str | None = None,
+) -> list[dict[str, Any]]:
+    """Poll Datadog until ResponseLogPayload XML has a CORORA statuscode."""
+    deadline = time.monotonic() + timeout
+    last_records: list[dict[str, Any]] = []
+    service = resolve_service_filter(settings)
+
+    while True:
+        fetched = fetch_request_records(
+            client,
+            settings,
+            from_time=from_time,
+            to_time=to_time,
+            text=order_number,
+            env=env,
+            service=service,
+        )
+        last_records = fetched.records
+        if find_two_char_statuscode_in_sources(records=last_records):
             return last_records
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -298,6 +334,52 @@ def _enrich_impulse_from_datadog(
     impulse = find_globalorderid_in_records(records)
     if is_impulse_order_number(impulse):
         check = replace(check, globalorderid=impulse)
+    return records, check
+
+
+def _enrich_corora_from_datadog(
+    settings: Settings,
+    *,
+    check: ResponseCheckResult,
+    order_number: str,
+    from_time: str | None,
+    to_time: str | None,
+    env: str | None,
+) -> tuple[list[dict[str, Any]], ResponseCheckResult]:
+    """Fill FAILED Code from Datadog ``<tns:statuscode>`` (LULAEN → EN)."""
+    mapped = corora_code_from_statuscode(check.statuscode)
+    if mapped:
+        if mapped != (check.statuscode or "").strip():
+            check = replace(check, statuscode=mapped)
+        return [], check
+    try:
+        window_from, window_to = default_time_window()
+        with DatadogClient(settings) as client:
+            records = poll_corora_statuscode(
+                client,
+                settings,
+                order_number=order_number,
+                from_time=from_time or window_from,
+                to_time=to_time or window_to,
+                poll_interval=IMPULSE_LOOKUP_POLL_INTERVAL,
+                timeout=IMPULSE_LOOKUP_TIMEOUT,
+                env=env,
+            )
+    except DatadogError as exc:
+        logger.warning("FAILED statuscode lookup skipped: %s", exc)
+        return [], check
+    except Exception as exc:
+        logger.warning("FAILED statuscode lookup failed: %s", exc)
+        return [], check
+
+    code = find_two_char_statuscode_in_sources(
+        records=records,
+        response_payload=check.response_payload
+        if isinstance(check.response_payload, dict)
+        else None,
+    )
+    if code:
+        check = replace(check, statuscode=code)
     return records, check
 
 
@@ -376,6 +458,15 @@ def _complete_replay(
             and not is_impulse_order_number(check.globalorderid)
         ):
             fetched_records, check = _enrich_impulse_from_datadog(
+                settings,
+                check=check,
+                order_number=new_number,
+                from_time=from_time,
+                to_time=to_time,
+                env=env,
+            )
+        elif check is not None and check.outcome == "FAILED":
+            fetched_records, check = _enrich_corora_from_datadog(
                 settings,
                 check=check,
                 order_number=new_number,

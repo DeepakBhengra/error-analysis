@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -11,7 +11,8 @@ from error_analysis.extractors.order_create_v2_response import (
     extract_xml_statuscode,
     parse_v2_response_text,
 )
-from error_analysis.error_lookup.client import is_two_char_error_code
+from error_analysis.error_lookup.client import corora_code_from_statuscode
+
 Outcome = Literal["SUCCESS", "FAILED", "UNKNOWN"]
 
 
@@ -400,9 +401,10 @@ def find_response_check(records: list[dict[str, Any]]) -> ResponseCheckResult | 
     failed = [c for c in pool if c.outcome == "FAILED"]
     if failed:
         for item in failed:
-            if is_two_char_error_code(item.statuscode):
-                return item
-        # Non-two-char FAILED: try map from v2 XML statuscode across records
+            mapped_code = corora_code_from_statuscode(item.statuscode)
+            if mapped_code:
+                return _apply_corora_statuscode(item, mapped_code)
+        # Non-CORORA FAILED: try map from v2 XML statuscode across records
         mapped = map_two_char_from_v2_sources(records, failed[0])
         if mapped is not None:
             return mapped
@@ -414,13 +416,31 @@ def find_response_check(records: list[dict[str, Any]]) -> ResponseCheckResult | 
     return pool[0]
 
 
+def _apply_corora_statuscode(
+    item: ResponseCheckResult, mapped: str
+) -> ResponseCheckResult:
+    """Replace a longer XML statuscode (e.g. LULAEN) with the two-char CORORA code."""
+    if (item.statuscode or "").strip() == mapped:
+        return item
+    return replace(
+        item,
+        statuscode=mapped,
+        raw_preamble={
+            **(item.raw_preamble or {}),
+            "originalStatuscode": item.statuscode,
+            "mappedFromV2Statuscode": mapped,
+        },
+    )
+
+
 def map_two_char_from_v2_sources(
     records: list[dict[str, Any]],
     base: ResponseCheckResult,
 ) -> ResponseCheckResult | None:
     """If base.statuscode is not two-char, map from v2 XML ``statuscode`` / returnCode."""
-    if is_two_char_error_code(base.statuscode):
-        return None
+    mapped_self = corora_code_from_statuscode(base.statuscode)
+    if mapped_self:
+        return _apply_corora_statuscode(base, mapped_self)
 
     code = find_two_char_statuscode_in_sources(
         records=records,
@@ -429,23 +449,7 @@ def map_two_char_from_v2_sources(
     if not code:
         return None
 
-    return ResponseCheckResult(
-        outcome=base.outcome,
-        statuscode=code,
-        responsemessage=base.responsemessage,
-        errorcode=base.errorcode,
-        responsestatus=base.responsestatus,
-        globalorderid=base.globalorderid,
-        raw_preamble={
-            **(base.raw_preamble or {}),
-            "originalStatuscode": base.statuscode,
-            "mappedFromV2Statuscode": code,
-        },
-        response_payload=base.response_payload,
-        source_log_id=base.source_log_id,
-        customer_order_number=base.customer_order_number,
-        source_service=base.source_service,
-    )
+    return _apply_corora_statuscode(base, code)
 
 
 def find_two_char_statuscode_in_sources(
@@ -454,30 +458,47 @@ def find_two_char_statuscode_in_sources(
     response_payload: dict[str, Any] | None = None,
     http_body: Any = None,
 ) -> str:
-    """Find a two-char CORORA code from v2 XML ``statuscode`` (e.g. tns:statuscode)."""
+    """Find a two-char CORORA code from v2 XML ``statuscode`` (e.g. tns:statuscode).
+
+    Longer XML values such as ``LULAEN`` are reduced to the last two characters
+    (``EN``) when those match a CORORA code.
+    """
     for text in _iter_source_strings(
         records=records, response_payload=response_payload, http_body=http_body
     ):
-        code = extract_xml_statuscode(text)
-        if is_two_char_error_code(code):
-            return code.strip().upper()
+        mapped = corora_code_from_statuscode(extract_xml_statuscode(text))
+        if mapped:
+            return mapped
 
         parsed = parse_v2_response_text(text)
         if parsed:
             for key in ("statuscode", "returnCode"):
-                candidate = (parsed.get(key) or "").strip()
-                if is_two_char_error_code(candidate):
-                    return candidate.upper()
+                mapped = corora_code_from_statuscode(parsed.get(key) or "")
+                if mapped:
+                    return mapped
 
     # Structured v2xml / JSON records without raw XML text
     for record in records or []:
         parsed = extract_v2_response_from_record(record)
-        if not parsed:
-            continue
-        for key in ("statuscode", "returnCode"):
-            candidate = (parsed.get(key) or "").strip()
-            if is_two_char_error_code(candidate):
-                return candidate.upper()
+        if parsed:
+            for key in ("statuscode", "returnCode"):
+                mapped = corora_code_from_statuscode(parsed.get(key) or "")
+                if mapped:
+                    return mapped
+        payload = record.get("ResponseLogPayload")
+        if payload is None:
+            payload = record.get("response")
+        preamble = extract_preamble(payload)
+        if preamble is not None:
+            mapped = corora_code_from_statuscode(preamble.get("statuscode") or "")
+            if mapped:
+                return mapped
+
+    preamble = extract_preamble(response_payload)
+    if preamble is not None:
+        mapped = corora_code_from_statuscode(preamble.get("statuscode") or "")
+        if mapped:
+            return mapped
 
     return ""
 

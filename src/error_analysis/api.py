@@ -349,7 +349,8 @@ def _enrich_failed_statuscode(
     """Map non-two-char FAILED statuscode for the UI.
 
     Order of preference:
-    1. Two-char ``<tns:statuscode>`` / v2 XML statuscode from Order Create v2 response
+    1. Two-char ``<tns:statuscode>`` / v2 XML statuscode from Order Create v2
+       ResponseLogPayload (``LULAEN`` → ``EN``, ``EM`` stays ``EM``)
     2. COBOL error_field lookup using responsemessage
 
     Returns (possibly mapped statuscode, extra response fields).
