@@ -427,9 +427,39 @@ def extract_substation_xml_from_event(event: dict[str, Any]) -> str:
     return extract_substation_xml(_joined_event_text(event))
 
 
+CUSTOMER_PO_FIELDS = (
+    "ORRORH-CUST-TO-ING-PO-NBR",
+    "ORRORH-CUST-TO-CUST-PO-NBR",
+)
+INGRAM_ORDER_NBR_FIELD = "ORRORH-INGRAM-ORDER-NBR"
+
+
 def xml_matches_order_number(xml_text: str, order_number: str) -> bool:
     po = (order_number or "").strip()
     return bool(po) and po in (xml_text or "")
+
+
+def _field_matches_po(value: str, po: str) -> bool:
+    text = (value or "").strip()
+    return bool(text) and (text == po or po in text)
+
+
+def xml_customer_po_matches(xml_text: str, order_number: str) -> bool:
+    """True when a customer PO tag equals or contains the searched PO."""
+    po = (order_number or "").strip()
+    if not po:
+        return False
+    values = parse_orrorh_xml_values(xml_text)
+    return any(_field_matches_po(values.get(name, ""), po) for name in CUSTOMER_PO_FIELDS)
+
+
+def xml_ingram_order_matches(xml_text: str, order_number: str) -> bool:
+    """True when ``ORRORH-INGRAM-ORDER-NBR`` equals or contains the search text."""
+    po = (order_number or "").strip()
+    if not po:
+        return False
+    values = parse_orrorh_xml_values(xml_text)
+    return _field_matches_po(values.get(INGRAM_ORDER_NBR_FIELD, ""), po)
 
 
 def event_matches_order_number(
@@ -558,9 +588,36 @@ def find_v2_event(
     return None
 
 
+def _substation_candidate_score(xml_text: str, order_number: str) -> int:
+    """Rank a Substation XML body for a customer-PO search.
+
+    Customer PO tags outrank a bare substring match (CorrelationId).
+    An Ingram order number that happens to equal the search text is rejected
+    so ``12948`` does not attach ``60-SZ1840`` when the curl is ``41-008922``.
+    """
+    if xml_customer_po_matches(xml_text, order_number):
+        score = 200
+    elif xml_ingram_order_matches(xml_text, order_number):
+        return 0
+    else:
+        score = 50
+    from error_analysis.order_create.detail_elements import (
+        extract_detail_elements,
+        first_detail_record_start,
+    )
+
+    if first_detail_record_start(extract_detail_elements(xml_text)) >= 0:
+        score += 10
+    return score
+
+
 def find_substation_xml(
     events: list[dict[str, Any]], order_number: str
 ) -> tuple[str, str | None]:
+    """Return the Substation XML that best matches the customer PO."""
+    best_xml = ""
+    best_id: str | None = None
+    best_score = 0
     for event in events:
         xml = extract_substation_xml_from_event(event)
         if not xml:
@@ -569,9 +626,15 @@ def find_substation_xml(
             event, order_number, xml
         ):
             continue
-        log_id = event.get("id")
-        return xml, str(log_id) if log_id else None
-    return "", None
+        score = _substation_candidate_score(xml, order_number)
+        if score <= 0:
+            continue
+        if score > best_score:
+            best_score = score
+            best_xml = xml
+            log_id = event.get("id")
+            best_id = str(log_id) if log_id else None
+    return best_xml, best_id
 
 
 def lookup_orrorh_from_events(

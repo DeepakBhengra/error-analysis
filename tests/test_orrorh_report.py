@@ -11,6 +11,7 @@ from error_analysis.order_create.orrorh_report import (
     extract_substation_xml,
     extract_substation_xml_from_event,
     fetch_orrorh_lookup,
+    find_substation_xml,
     is_order_create_v2_event,
     is_order_update_substation_event,
     lookup_orrorh_from_events,
@@ -325,6 +326,93 @@ def test_screenshot_shaped_log_builds_substation_report():
     assert "ORRORH-CUSTOMER-BR = 30" in result.report
     assert "ORRORH-CUST-TO-CUST-PO-NBR = P27951376" in result.report
     assert "ORRORH-CUST-TO-ING-PO-NBR = P27951376" in result.report
+
+
+def test_customer_po_is_preferred_over_ingram_order_number():
+    """Search 12948 must not attach Ingram order 12948 (60-SZ1840)."""
+    ingram_event = {
+        "id": "upd-ingram-12948",
+        "attributes": {
+            "service": "OrderUpdate_Service",
+            "message": (
+                "<ns0:ServiceName>OrderUpdate_Service_root</ns0:ServiceName>"
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                "<ns0:SSOrderEntryRequest>"
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                "<ORRORH-CUSTOMER-BR>60</ORRORH-CUSTOMER-BR>"
+                "<ORRORH-CUSTOMER-NBR>SZ1840</ORRORH-CUSTOMER-NBR>"
+                "<ORRORH-INGRAM-ORDER-NBR>12948</ORRORH-INGRAM-ORDER-NBR>"
+                "<ORRORD-DETAIL-ELEMENTS>\tPT</ORRORD-DETAIL-ELEMENTS>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    customer_event = {
+        "id": "upd-customer-12948",
+        "attributes": {
+            "service": "OrderUpdate_Service",
+            "message": (
+                "<ns0:ServiceName>OrderUpdate_Service_root</ns0:ServiceName>"
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                "<ns0:SSOrderEntryRequest>"
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                "<ORRORH-CUSTOMER-BR>41</ORRORH-CUSTOMER-BR>"
+                "<ORRORH-CUSTOMER-NBR>008922</ORRORH-CUSTOMER-NBR>"
+                "<ORRORH-CUST-TO-ING-PO-NBR>12948</ORRORH-CUST-TO-ING-PO-NBR>"
+                "<ORRORD-DETAIL-ELEMENTS>\tOL                          001"
+                "</ORRORD-DETAIL-ELEMENTS>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    xml, log_id = find_substation_xml(
+        [ingram_event, customer_event],
+        "12948",
+    )
+    assert log_id == "upd-customer-12948"
+    assert "ORRORH-CUSTOMER-BR>41" in xml
+    assert "SZ1840" not in xml
+
+    result = lookup_orrorh_from_events(
+        v2_events=[],
+        update_events=[ingram_event, customer_event],
+        order_number="12948",
+    )
+    assert result.source_log_id == "upd-customer-12948"
+    assert "ORRORH-CUSTOMER-BR = 41" in result.report
+    assert "ORRORH-CUSTOMER-NBR = 008922" in result.report
+    assert "ORRORH-CUST-TO-ING-PO-NBR = 12948" in result.report
+    assert result.line_records[0]["kind"] == "OL"
+
+
+def test_ingram_order_number_alone_is_not_a_customer_po_match():
+    event = {
+        "id": "upd-ingram-only",
+        "attributes": {
+            "message": (
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                "<ns0:SSOrderEntryRequest>"
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                "<ORRORH-CUSTOMER-BR>60</ORRORH-CUSTOMER-BR>"
+                "<ORRORH-CUSTOMER-NBR>SZ1840</ORRORH-CUSTOMER-NBR>"
+                "<ORRORH-INGRAM-ORDER-NBR>12948</ORRORH-INGRAM-ORDER-NBR>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    result = lookup_orrorh_from_events(
+        v2_events=[],
+        update_events=[event],
+        order_number="12948",
+    )
+    assert result.xml == ""
+    assert result.report == ""
 
 
 def test_correlation_id_prefix_matches_when_xml_omits_po():
