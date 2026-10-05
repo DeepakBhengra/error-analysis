@@ -6,19 +6,24 @@ from error_analysis.order_create.orrorh_report import (
     ORDER_UPDATE_SERVICE_FILTER,
     SPACES_VALUE,
     SUBSTATION_LOG_DESCRIPTION,
+    CurlIdentity,
     build_orrorh_report_lines,
     build_substation_search_query,
+    curl_identity_from_order_create,
     extract_substation_xml,
     extract_substation_xml_from_event,
     fetch_orrorh_lookup,
+    find_substation_xml,
     is_order_create_v2_event,
     is_order_update_substation_event,
     lookup_orrorh_from_events,
     orrorh_copybook_fields,
     orrorh_copybook_model,
+    parse_customer_br_nbr,
     parse_orrorh_copybook,
     parse_orrorh_fields,
     parse_orrorh_xml_values,
+    parse_timestamp_ms,
     report_from_substation_xml,
 )
 
@@ -325,6 +330,260 @@ def test_screenshot_shaped_log_builds_substation_report():
     assert "ORRORH-CUSTOMER-BR = 30" in result.report
     assert "ORRORH-CUST-TO-CUST-PO-NBR = P27951376" in result.report
     assert "ORRORH-CUST-TO-ING-PO-NBR = P27951376" in result.report
+
+
+def test_customer_po_is_preferred_over_ingram_order_number():
+    """Search 12948 must not attach Ingram order 12948 (60-SZ1840)."""
+    ingram_event = {
+        "id": "upd-ingram-12948",
+        "attributes": {
+            "service": "OrderUpdate_Service",
+            "message": (
+                "<ns0:ServiceName>OrderUpdate_Service_root</ns0:ServiceName>"
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                "<ns0:SSOrderEntryRequest>"
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                "<ORRORH-CUSTOMER-BR>60</ORRORH-CUSTOMER-BR>"
+                "<ORRORH-CUSTOMER-NBR>SZ1840</ORRORH-CUSTOMER-NBR>"
+                "<ORRORH-INGRAM-ORDER-NBR>12948</ORRORH-INGRAM-ORDER-NBR>"
+                "<ORRORD-DETAIL-ELEMENTS>\tPT</ORRORD-DETAIL-ELEMENTS>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    customer_event = {
+        "id": "upd-customer-12948",
+        "attributes": {
+            "service": "OrderUpdate_Service",
+            "message": (
+                "<ns0:ServiceName>OrderUpdate_Service_root</ns0:ServiceName>"
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                "<ns0:SSOrderEntryRequest>"
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                "<ORRORH-CUSTOMER-BR>41</ORRORH-CUSTOMER-BR>"
+                "<ORRORH-CUSTOMER-NBR>008922</ORRORH-CUSTOMER-NBR>"
+                "<ORRORH-CUST-TO-ING-PO-NBR>12948</ORRORH-CUST-TO-ING-PO-NBR>"
+                "<ORRORD-DETAIL-ELEMENTS>\tOL                          001"
+                "</ORRORD-DETAIL-ELEMENTS>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    xml, log_id = find_substation_xml(
+        [ingram_event, customer_event],
+        "12948",
+    )
+    assert log_id == "upd-customer-12948"
+    assert "ORRORH-CUSTOMER-BR>41" in xml
+    assert "SZ1840" not in xml
+
+    result = lookup_orrorh_from_events(
+        v2_events=[],
+        update_events=[ingram_event, customer_event],
+        order_number="12948",
+    )
+    assert result.source_log_id == "upd-customer-12948"
+    assert "ORRORH-CUSTOMER-BR = 41" in result.report
+    assert "ORRORH-CUSTOMER-NBR = 008922" in result.report
+    assert "ORRORH-CUST-TO-ING-PO-NBR = 12948" in result.report
+    assert result.line_records[0]["kind"] == "OL"
+
+
+def test_parse_customer_br_nbr_from_header_and_reseller_id():
+    assert parse_customer_br_nbr("41-008922") == ("41", "008922")
+    assert parse_customer_br_nbr("41008922") == ("41", "008922")
+    assert parse_customer_br_nbr("60-SZ1840") == ("60", "SZ1840")
+
+
+def test_curl_identity_from_im_customer_number_and_reseller_id():
+    from_header = curl_identity_from_order_create(
+        headers={"IM-CustomerNumber": "41-008922"},
+        body={"customerOrderNumber": "12948", "resellerInfo": {"resellerId": "41008922"}},
+        timestamp="2026-10-02T08:00:43.459Z",
+    )
+    assert from_header == CurlIdentity(
+        po="12948",
+        br="41",
+        nbr="008922",
+        timestamp_ms=parse_timestamp_ms("2026-10-02T08:00:43.459Z"),
+    )
+    from_reseller = curl_identity_from_order_create(
+        headers={},
+        body={"customerOrderNumber": "12948", "resellerInfo": {"resellerId": "41008922"}},
+    )
+    assert from_reseller.po == "12948"
+    assert from_reseller.br == "41"
+    assert from_reseller.nbr == "008922"
+
+
+def _substation_event(
+    *,
+    log_id: str,
+    br: str,
+    nbr: str,
+    po: str | None = "12948",
+    ingram_order: str | None = None,
+    timestamp: str | None = None,
+    date_timestamp: str | None = None,
+    detail: str = "\tOL                          001",
+) -> dict:
+    po_xml = (
+        f"<ORRORH-CUST-TO-ING-PO-NBR>{po}</ORRORH-CUST-TO-ING-PO-NBR>"
+        if po
+        else ""
+    )
+    ingram_xml = (
+        f"<ORRORH-INGRAM-ORDER-NBR>{ingram_order}</ORRORH-INGRAM-ORDER-NBR>"
+        if ingram_order
+        else ""
+    )
+    date_xml = (
+        f"<ns0:DateTimestamp>{date_timestamp}</ns0:DateTimestamp>"
+        if date_timestamp
+        else ""
+    )
+    event = {
+        "id": log_id,
+        "attributes": {
+            "service": "OrderUpdate_Service",
+            "message": (
+                date_xml
+                + "<ns0:ServiceName>OrderUpdate_Service_root</ns0:ServiceName>"
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                "<ns0:SSOrderEntryRequest>"
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                f"<ORRORH-CUSTOMER-BR>{br}</ORRORH-CUSTOMER-BR>"
+                f"<ORRORH-CUSTOMER-NBR>{nbr}</ORRORH-CUSTOMER-NBR>"
+                f"{po_xml}{ingram_xml}"
+                f"<ORRORD-DETAIL-ELEMENTS>{detail}</ORRORD-DETAIL-ELEMENTS>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    if timestamp:
+        event["attributes"]["timestamp"] = timestamp
+    return event
+
+
+def test_curl_identity_rejects_ingram_and_other_customer_br():
+    identity = CurlIdentity(po="12948", br="41", nbr="008922")
+    ingram = _substation_event(
+        log_id="upd-ingram-12948",
+        br="60",
+        nbr="SZ1840",
+        po=None,
+        ingram_order="12948",
+        detail="\tPT",
+    )
+    other_customer = _substation_event(
+        log_id="upd-other-12948",
+        br="20",
+        nbr="222222",
+        po="12948",
+    )
+    matching = _substation_event(
+        log_id="upd-customer-12948",
+        br="41",
+        nbr="008922",
+        po="12948",
+    )
+    result = lookup_orrorh_from_events(
+        v2_events=[],
+        update_events=[ingram, other_customer, matching],
+        order_number="12948",
+        identity=identity,
+    )
+    assert result.source_log_id == "upd-customer-12948"
+    assert "ORRORH-CUSTOMER-BR = 41" in result.report
+    assert "ORRORH-CUSTOMER-NBR = 008922" in result.report
+
+
+def test_curl_identity_prefers_closer_timestamp():
+    identity = CurlIdentity(
+        po="12948",
+        br="41",
+        nbr="008922",
+        timestamp_ms=parse_timestamp_ms("2026-10-02T08:00:43.459Z"),
+    )
+    far = _substation_event(
+        log_id="upd-far",
+        br="41",
+        nbr="008922",
+        po="12948",
+        timestamp="2026-10-02T10:00:00.000Z",
+    )
+    near = _substation_event(
+        log_id="upd-near",
+        br="41",
+        nbr="008922",
+        po="12948",
+        timestamp="2026-10-02T08:00:50.000Z",
+        date_timestamp="2026-10-02T01:00:50.000-07:00",
+    )
+    xml, log_id = find_substation_xml(
+        [far, near],
+        "12948",
+        identity=identity,
+    )
+    assert log_id == "upd-near"
+    assert "ORRORH-CUSTOMER-NBR>008922" in xml
+
+
+def test_curl_identity_uses_tibco_date_timestamp_when_datadog_ts_missing():
+    identity = CurlIdentity(
+        po="12948",
+        br="41",
+        nbr="008922",
+        timestamp_ms=parse_timestamp_ms("2026-10-02T08:00:43.459Z"),
+    )
+    far = _substation_event(
+        log_id="upd-far-date",
+        br="41",
+        nbr="008922",
+        po="12948",
+        date_timestamp="2026-10-01T01:00:00.000-07:00",
+    )
+    near = _substation_event(
+        log_id="upd-near-date",
+        br="41",
+        nbr="008922",
+        po="12948",
+        date_timestamp="2026-10-02T01:00:50.000-07:00",
+    )
+    _, log_id = find_substation_xml([far, near], "12948", identity=identity)
+    assert log_id == "upd-near-date"
+
+
+def test_ingram_order_number_alone_is_not_a_customer_po_match():
+    event = {
+        "id": "upd-ingram-only",
+        "attributes": {
+            "message": (
+                "<ns0:LogDescription>OrderCreateCallSubstationRequest"
+                "</ns0:LogDescription>"
+                "<ns0:RequestLogPayload>Substation Request: "
+                "<ns0:SSOrderEntryRequest>"
+                "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+                "<ORRORH-CUSTOMER-BR>60</ORRORH-CUSTOMER-BR>"
+                "<ORRORH-CUSTOMER-NBR>SZ1840</ORRORH-CUSTOMER-NBR>"
+                "<ORRORH-INGRAM-ORDER-NBR>12948</ORRORH-INGRAM-ORDER-NBR>"
+                "</ns0:SSOrderEntryRequest>"
+            ),
+        },
+    }
+    result = lookup_orrorh_from_events(
+        v2_events=[],
+        update_events=[event],
+        order_number="12948",
+    )
+    assert result.xml == ""
+    assert result.report == ""
 
 
 def test_correlation_id_prefix_matches_when_xml_omits_po():

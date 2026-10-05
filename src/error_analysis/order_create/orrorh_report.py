@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,10 @@ _SERVICE_NAME_RE = re.compile(
 )
 _LOG_DESC_RE = re.compile(
     r"<(?:\w+:)?LogDescription>(.*?)</(?:\w+:)?LogDescription>",
+    re.IGNORECASE | re.DOTALL,
+)
+_DATE_TIMESTAMP_RE = re.compile(
+    r"<(?:\w+:)?DateTimestamp>(.*?)</(?:\w+:)?DateTimestamp>",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -427,9 +432,196 @@ def extract_substation_xml_from_event(event: dict[str, Any]) -> str:
     return extract_substation_xml(_joined_event_text(event))
 
 
+CUSTOMER_PO_FIELDS = (
+    "ORRORH-CUST-TO-ING-PO-NBR",
+    "ORRORH-CUST-TO-CUST-PO-NBR",
+)
+INGRAM_ORDER_NBR_FIELD = "ORRORH-INGRAM-ORDER-NBR"
+CUSTOMER_BR_FIELD = "ORRORH-CUSTOMER-BR"
+CUSTOMER_NBR_FIELD = "ORRORH-CUSTOMER-NBR"
+_UNKNOWN_TIMESTAMP_DELTA_MS = 2**62
+
+
+@dataclass(frozen=True)
+class CurlIdentity:
+    """Customer identity taken from the Order Create curl / source log."""
+
+    po: str = ""
+    br: str = ""
+    nbr: str = ""
+    timestamp_ms: int | None = None
+
+
+def parse_timestamp_ms(value: Any) -> int | None:
+    """Parse Datadog / ISO / epoch timestamps to milliseconds."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if number > 1e12:
+            return int(number)
+        if number > 1e9:
+            return int(number * 1000)
+        return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return parse_timestamp_ms(int(text))
+    iso = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    return int(parsed.timestamp() * 1000)
+
+
+def event_timestamp_ms(event: dict[str, Any]) -> int | None:
+    """Datadog ``attributes.timestamp``, else TIBCO ``DateTimestamp``."""
+    attributes = event.get("attributes") if isinstance(event, dict) else None
+    nested = attributes.get("attributes") if isinstance(attributes, dict) else None
+    for container in (nested, attributes, event):
+        if not isinstance(container, dict):
+            continue
+        parsed = parse_timestamp_ms(container.get("timestamp"))
+        if parsed is not None:
+            return parsed
+    text = _joined_event_text(event) if isinstance(event, dict) else ""
+    match = _DATE_TIMESTAMP_RE.search(text)
+    if not match:
+        return None
+    return parse_timestamp_ms(match.group(1).strip())
+
+
+def parse_customer_br_nbr(value: str) -> tuple[str, str]:
+    """Split ``41-008922`` or compact ``41008922`` into BR + NBR."""
+    text = (value or "").strip()
+    if not text:
+        return "", ""
+    if "-" in text:
+        branch, number = text.split("-", 1)
+        return branch.strip(), number.strip()
+    compact = re.sub(r"\s+", "", text)
+    if len(compact) >= 3:
+        return compact[:2], compact[2:]
+    return "", ""
+
+
+def _header_value(headers: dict[str, Any] | None, name: str) -> str:
+    if not isinstance(headers, dict):
+        return ""
+    wanted = name.lower()
+    for key, value in headers.items():
+        if str(key).lower() == wanted and isinstance(value, str):
+            return value.strip()
+    return ""
+
+
+def curl_identity_from_order_create(
+    *,
+    headers: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+    timestamp: Any = None,
+    fallback_po: str = "",
+) -> CurlIdentity:
+    """Read customer PO / BR / NBR from the built curl and optional log time."""
+    po = (fallback_po or "").strip()
+    if isinstance(body, dict):
+        body_po = body.get("customerOrderNumber")
+        if isinstance(body_po, str) and body_po.strip():
+            po = body_po.strip()
+    customer = _header_value(headers, "IM-CustomerNumber")
+    branch, number = parse_customer_br_nbr(customer)
+    if (not branch or not number) and isinstance(body, dict):
+        reseller = body.get("resellerInfo")
+        reseller_id = reseller.get("resellerId") if isinstance(reseller, dict) else None
+        if isinstance(reseller_id, str) and reseller_id.strip():
+            parsed_br, parsed_nbr = parse_customer_br_nbr(reseller_id.strip())
+            branch = branch or parsed_br
+            number = number or parsed_nbr
+    return CurlIdentity(
+        po=po,
+        br=branch,
+        nbr=number,
+        timestamp_ms=parse_timestamp_ms(timestamp),
+    )
+
+
+def _token_equal(left: str, right: str) -> bool:
+    return (left or "").strip().upper() == (right or "").strip().upper()
+
+
+def _nbr_equal(left: str, right: str) -> bool:
+    if _token_equal(left, right):
+        return True
+    a = (left or "").strip()
+    b = (right or "").strip()
+    if a.isdigit() and b.isdigit():
+        return (a.lstrip("0") or "0") == (b.lstrip("0") or "0")
+    return False
+
+
 def xml_matches_order_number(xml_text: str, order_number: str) -> bool:
     po = (order_number or "").strip()
     return bool(po) and po in (xml_text or "")
+
+
+def _field_matches_po(value: str, po: str) -> bool:
+    text = (value or "").strip()
+    return bool(text) and (text == po or po in text)
+
+
+def xml_customer_po_matches(xml_text: str, order_number: str) -> bool:
+    """True when a customer PO tag equals or contains the searched PO."""
+    po = (order_number or "").strip()
+    if not po:
+        return False
+    values = parse_orrorh_xml_values(xml_text)
+    return any(_field_matches_po(values.get(name, ""), po) for name in CUSTOMER_PO_FIELDS)
+
+
+def xml_ingram_order_matches(xml_text: str, order_number: str) -> bool:
+    """True when ``ORRORH-INGRAM-ORDER-NBR`` equals or contains the search text."""
+    po = (order_number or "").strip()
+    if not po:
+        return False
+    values = parse_orrorh_xml_values(xml_text)
+    return _field_matches_po(values.get(INGRAM_ORDER_NBR_FIELD, ""), po)
+
+
+def xml_customer_br_nbr_contradicts(
+    xml_text: str, identity: CurlIdentity | None
+) -> bool:
+    """True when Substation BR/NBR are present and disagree with the curl."""
+    if identity is None or (not identity.br and not identity.nbr):
+        return False
+    values = parse_orrorh_xml_values(xml_text)
+    xml_br = (values.get(CUSTOMER_BR_FIELD) or "").strip()
+    xml_nbr = (values.get(CUSTOMER_NBR_FIELD) or "").strip()
+    if identity.br and xml_br and not _token_equal(identity.br, xml_br):
+        return True
+    if identity.nbr and xml_nbr and not _nbr_equal(identity.nbr, xml_nbr):
+        return True
+    return False
+
+
+def xml_customer_br_nbr_matches(
+    xml_text: str, identity: CurlIdentity | None
+) -> bool:
+    """True when curl BR and NBR both appear on the Substation header."""
+    if identity is None or not identity.br or not identity.nbr:
+        return False
+    values = parse_orrorh_xml_values(xml_text)
+    xml_br = (values.get(CUSTOMER_BR_FIELD) or "").strip()
+    xml_nbr = (values.get(CUSTOMER_NBR_FIELD) or "").strip()
+    return bool(
+        xml_br
+        and xml_nbr
+        and _token_equal(identity.br, xml_br)
+        and _nbr_equal(identity.nbr, xml_nbr)
+    )
 
 
 def event_matches_order_number(
@@ -558,20 +750,83 @@ def find_v2_event(
     return None
 
 
+def _substation_candidate_score(
+    xml_text: str,
+    order_number: str,
+    identity: CurlIdentity | None = None,
+) -> int:
+    """Rank a Substation XML body for a customer-PO search.
+
+    Customer PO tags outrank a bare substring match (CorrelationId).
+    An Ingram order number that happens to equal the search text is rejected
+    so ``12948`` does not attach ``60-SZ1840`` when the curl is ``41-008922``.
+    When curl BR/NBR are known, a contradicting header is rejected and an
+    exact BR+NBR match outranks PO-only hits.
+    """
+    if xml_customer_br_nbr_contradicts(xml_text, identity):
+        return 0
+    identity_customer = xml_customer_br_nbr_matches(xml_text, identity)
+    if xml_customer_po_matches(xml_text, order_number):
+        score = 400 if identity_customer else 200
+    elif xml_ingram_order_matches(xml_text, order_number):
+        return 0
+    elif identity_customer:
+        score = 150
+    else:
+        score = 50
+    from error_analysis.order_create.detail_elements import (
+        extract_detail_elements,
+        first_detail_record_start,
+    )
+
+    if first_detail_record_start(extract_detail_elements(xml_text)) >= 0:
+        score += 10
+    return score
+
+
+def _timestamp_delta_ms(
+    event: dict[str, Any], identity: CurlIdentity | None
+) -> int | None:
+    if identity is None or identity.timestamp_ms is None:
+        return None
+    event_ts = event_timestamp_ms(event)
+    if event_ts is None:
+        return _UNKNOWN_TIMESTAMP_DELTA_MS
+    return abs(event_ts - identity.timestamp_ms)
+
+
 def find_substation_xml(
-    events: list[dict[str, Any]], order_number: str
+    events: list[dict[str, Any]],
+    order_number: str,
+    identity: CurlIdentity | None = None,
 ) -> tuple[str, str | None]:
+    """Return the Substation XML that best matches the curl identity."""
+    po = (identity.po if identity and identity.po else order_number) or ""
+    best_xml = ""
+    best_id: str | None = None
+    best_score = 0
+    best_delta: int | None = None
     for event in events:
         xml = extract_substation_xml_from_event(event)
         if not xml:
             continue
-        if order_number and not event_matches_order_number(
-            event, order_number, xml
-        ):
+        if po and not event_matches_order_number(event, po, xml):
             continue
-        log_id = event.get("id")
-        return xml, str(log_id) if log_id else None
-    return "", None
+        score = _substation_candidate_score(xml, po, identity)
+        if score <= 0:
+            continue
+        delta = _timestamp_delta_ms(event, identity)
+        closer = (
+            delta is not None
+            and (best_delta is None or delta < best_delta)
+        )
+        if score > best_score or (score == best_score and closer):
+            best_score = score
+            best_delta = delta
+            best_xml = xml
+            log_id = event.get("id")
+            best_id = str(log_id) if log_id else None
+    return best_xml, best_id
 
 
 def lookup_orrorh_from_events(
@@ -579,9 +834,13 @@ def lookup_orrorh_from_events(
     v2_events: list[dict[str, Any]],
     update_events: list[dict[str, Any]],
     order_number: str,
+    identity: CurlIdentity | None = None,
 ) -> OrrorhLookupResult:
-    v2_event = find_v2_event(v2_events, order_number)
-    xml, log_id = find_substation_xml(update_events, order_number)
+    po = (identity.po if identity and identity.po else order_number) or ""
+    v2_event = find_v2_event(v2_events, po)
+    xml, log_id = find_substation_xml(
+        update_events, po, identity=identity
+    )
     if not xml:
         return empty_orrorh_result(v2_found=v2_event is not None)
     result = report_from_substation_xml(xml)
@@ -604,10 +863,13 @@ def fetch_orrorh_lookup(
     from_time: str,
     to_time: str,
     env: str | None = None,
+    identity: CurlIdentity | None = None,
 ) -> OrrorhLookupResult:
     """Find OrderCreate_v2_0 then OrderUpdate_Service_root Substation Request."""
     del env  # reserved for callers that already scoped the Datadog window
     po = (order_number or "").strip()
+    if identity and identity.po and not po:
+        po = identity.po
     if not po:
         return empty_orrorh_result()
 
@@ -661,6 +923,7 @@ def fetch_orrorh_lookup(
             v2_events=v2_events,
             update_events=update_events,
             order_number=po,
+            identity=identity,
         )
         if last.xml:
             return last
