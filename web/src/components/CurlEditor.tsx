@@ -313,7 +313,7 @@ export function CurlEditor({
               ? 'ORRORH header fields from the OrderUpdate Substation Request. Empty tags are Spaces. Click a highlighted field to view its 88 condition-names.'
               : substationTab === 'comments'
                 ? 'ORRORD-DETAIL-ELEMENTS records that start with CL or EC, sliced at 1980 bytes and mapped to the ORRORC copybook.'
-                : 'ORRORD-DETAIL-ELEMENTS records that start with OL, sliced at 1980 bytes and mapped to the ORRORL copybook.'}
+                : 'ORRORD-DETAIL-ELEMENTS records that start with PL or OL, sliced at 1980 bytes and mapped to the ORRORL copybook.'}
           </p>
           <div className="copyable-panel">
             {substationTab === 'header' ? (
@@ -357,7 +357,7 @@ export function CurlEditor({
                 </div>
               ) : (
                 <pre className="curl-response-body curl-orrorh-body">
-                  No OL line records found in ORRORD-DETAIL-ELEMENTS.
+                  No PL/OL line records found in ORRORD-DETAIL-ELEMENTS.
                 </pre>
               )
             ) : null}

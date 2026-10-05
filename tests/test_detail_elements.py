@@ -123,8 +123,29 @@ def test_comment_and_line_records_from_sample_xml():
     assert line["ORRORL-QTY-ORDERED"]["value"] == "0000001"
 
 
+def test_pl_then_ol_payload_parses_both_as_lines():
+    """Comment-less detail starts at PL, then the next 1980-byte record is OL."""
+    detail = (
+        "\t"
+        + _record("PL" + (" " * 26) + "001" + (" " * 15) + "8Q6549      0000001")
+        + _record("OL" + (" " * 26) + "001" + (" " * 15) + "8Q6549      0000001")
+    )
+    assert first_detail_record_start(detail) == 1
+    assert [kind for kind, _chunk in split_detail_records(detail)] == ["PL", "OL"]
+    comments, lines = parse_detail_element_records(detail)
+    assert comments == []
+    assert [item["kind"] for item in lines] == ["PL", "OL"]
+    first = {item["name"]: item["value"] for item in lines[0]["fields"]}
+    second = {item["name"]: item["value"] for item in lines[1]["fields"]}
+    assert first["ORRORL-REQUEST-FUNCTION"] == "PL"
+    assert first["ORRORL-CUST-LINE-NBR"] == "001"
+    assert first["ORRORL-ING-PART-NBR"] == "8Q6549"
+    assert second["ORRORL-REQUEST-FUNCTION"] == "OL"
+    assert second["ORRORL-QTY-ORDERED"] == "0000001"
+
+
 def test_ol_first_payload_without_cl_parses_line():
-    """PO 12948-style Substation detail starts at OL, not CL."""
+    """PO 12948-style Substation detail can start at OL when there is no PL."""
     detail = "\t" + _record(
         "OL" + (" " * 26) + "001" + (" " * 15) + "80Q65499    0000001"
     )
@@ -162,6 +183,19 @@ def test_ol_first_xml_does_not_treat_incl_as_cl_start():
     assert result.line_records[0]["fields"][0]["value"] == "OL"
     by_name = {item["name"]: item["value"] for item in result.line_records[0]["fields"]}
     assert by_name["ORRORL-ING-PART-NBR"] == "80Q65499"
+
+
+def test_cl_still_wins_when_pl_follows_later():
+    detail = (
+        _record("CLORC" + (" " * 32) + "HEADER")
+        + _record("PL" + (" " * 26) + "001" + (" " * 15) + "8Q6549      0000001")
+        + _record("OL" + (" " * 26) + "001" + (" " * 15) + "8Q6549      0000001")
+    )
+    kinds = [kind for kind, _chunk in split_detail_records(detail)]
+    assert kinds == ["CL", "PL", "OL"]
+    comments, lines = parse_detail_element_records(detail)
+    assert comments[0]["kind"] == "CL"
+    assert [item["kind"] for item in lines] == ["PL", "OL"]
 
 
 def test_report_from_substation_xml_includes_detail_tabs():
