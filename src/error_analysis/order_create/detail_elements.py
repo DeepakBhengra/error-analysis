@@ -15,6 +15,9 @@ from error_analysis.order_create.copybook_layout import (
 DETAIL_RECORD_LENGTH = 1980
 COMMENT_KINDS = frozenset({"CL", "EC"})
 LINE_KIND = "OL"
+# Record kinds at column 0 or after whitespace. Do not use a raw
+# ``find("CL")`` — that matches the letters inside words such as INCL.
+_RECORD_START_RE = re.compile(r"(?:(?<=^)|(?<=[\t\n\r ]))(?:CL|OL)")
 
 _DETAIL_OPEN_RE = re.compile(
     r"<(?:\w+:)?ORRORD-DETAIL-ELEMENTS\b[^>]*>",
@@ -24,6 +27,12 @@ _DETAIL_CLOSE_RE = re.compile(
     r"</(?:\w+:)?ORRORD-DETAIL-ELEMENTS>",
     re.IGNORECASE,
 )
+
+
+def first_detail_record_start(detail_text: str) -> int:
+    """Index of the first ``CL`` or ``OL`` record, whichever appears first."""
+    match = _RECORD_START_RE.search(detail_text or "")
+    return match.start() if match else -1
 
 
 def extract_detail_elements(xml_text: str) -> str:
@@ -40,11 +49,12 @@ def extract_detail_elements(xml_text: str) -> str:
 
 
 def split_detail_records(detail_text: str) -> list[tuple[str, str]]:
-    """Slice from the first ``CL`` (or ``OL``) in 1980-byte records."""
+    """Slice from the first ``CL`` or ``OL`` in 1980-byte records.
+
+    Some Substation payloads have no comment header and start at ``OL``.
+    """
     text = detail_text or ""
-    start = text.find("CL")
-    if start < 0:
-        start = text.find("OL")
+    start = first_detail_record_start(text)
     if start < 0:
         return []
     records: list[tuple[str, str]] = []

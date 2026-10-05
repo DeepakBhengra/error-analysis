@@ -27,6 +27,7 @@ XML_TAG_ALIASES: dict[str, tuple[str, ...]] = {
 SPACES_VALUE = "Spaces"
 SUBSTATION_MARKER = "Substation Request"
 ORDER_UPDATE_SERVICE = "OrderUpdate_Service_root"
+ORDER_UPDATE_SERVICE_FILTER = "OrderUpdate_Service*"
 SUBSTATION_LOG_DESCRIPTION = "OrderCreateCallSubstationRequest"
 V2_SERVICE_PREFIX = "OrderCreate_v2"
 
@@ -620,12 +621,19 @@ def fetch_orrorh_lookup(
     )
 
     attempts: list[tuple[str, str | None, str | None]] = [
-        # Do not require service:OrderUpdate_Service_root — ServiceName is XML.
+        # Datadog service facet when present (OrderUpdate_Service / _root).
+        (po, SUBSTATION_LOG_DESCRIPTION, ORDER_UPDATE_SERVICE_FILTER),
+        (po, f'"{SUBSTATION_MARKER}"', ORDER_UPDATE_SERVICE_FILTER),
+        (po, None, ORDER_UPDATE_SERVICE_FILTER),
+        # ServiceName is often only inside TIBCO XML, so also search without it.
         (po, SUBSTATION_LOG_DESCRIPTION, None),
         (po, f'"{SUBSTATION_MARKER}"', None),
     ]
     if _can_wildcard_po(po):
         # CorrelationId is PO+timestamp, e.g. P279513762026-10-02T01:00:43.459
+        attempts.append(
+            (f"{po}*", SUBSTATION_LOG_DESCRIPTION, ORDER_UPDATE_SERVICE_FILTER)
+        )
         attempts.append((f"{po}*", SUBSTATION_LOG_DESCRIPTION, None))
     attempts.append((po, None, None))
 
