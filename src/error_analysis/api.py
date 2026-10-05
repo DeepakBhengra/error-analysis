@@ -53,6 +53,7 @@ from error_analysis.order_create.replay import (
 from error_analysis.order_create.orrorh_report import (
     empty_orrorh_result,
     fetch_orrorh_lookup,
+    orrorh_api_payload,
 )
 from error_analysis.order_create.validation_repair import repair_order_create_curl
 
@@ -477,6 +478,8 @@ def _api_response(
         "result": summary,
         "orrorhReport": summary.get("orrorhReport") or result.orrorh_report or "",
         "orrorhFields": summary.get("orrorhFields") or [],
+        "orrorcRecords": summary.get("orrorcRecords") or [],
+        "orrorlRecords": summary.get("orrorlRecords") or [],
     }
     payload.update(extras)
     return payload
@@ -572,8 +575,7 @@ def _lookup_substation_logs(
     """Fetch ORRORH Substation Logs for a customer PO (search or Re-Submit)."""
     po = (order_number or "").strip()
     if not po:
-        empty = empty_orrorh_result()
-        return {"orrorhReport": "", "orrorhFields": [], "orrorhV2Found": empty.v2_found}
+        return orrorh_api_payload(empty_orrorh_result())
     try:
         with DatadogClient(settings) as client:
             result = fetch_orrorh_lookup(
@@ -586,14 +588,8 @@ def _lookup_substation_logs(
             )
     except Exception as exc:
         logger.warning("Substation Logs lookup skipped for %r: %s", po, exc)
-        empty = empty_orrorh_result()
-        return {"orrorhReport": "", "orrorhFields": [], "orrorhV2Found": empty.v2_found}
-    return {
-        "orrorhReport": result.report,
-        "orrorhFields": result.fields,
-        "orrorhV2Found": result.v2_found,
-        "orrorhSourceLogId": result.source_log_id,
-    }
+        return orrorh_api_payload(empty_orrorh_result())
+    return orrorh_api_payload(result)
 
 
 def _preview_message(built: OrderCreateCurl, *, text: str) -> str:
@@ -702,6 +698,8 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
         "target": payload.target,
         "orrorhReport": substation.get("orrorhReport") or "",
         "orrorhFields": substation.get("orrorhFields") or [],
+        "orrorcRecords": substation.get("orrorcRecords") or [],
+        "orrorlRecords": substation.get("orrorlRecords") or [],
     }
 
 

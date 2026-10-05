@@ -1106,6 +1106,8 @@ def test_resubmit_includes_orrorh_substation_report(monkeypatch):
         xml=xml,
         v2_found=True,
         source_log_id="upd-1",
+        comment_records=lookup.comment_records,
+        line_records=lookup.line_records,
     )
 
     def fake_post(**kwargs):
@@ -1160,3 +1162,5 @@ def test_resubmit_includes_orrorh_substation_report(monkeypatch):
     assert data["orrorhFields"][0]["name"] == "ORRORH-REQUEST-FUNCTION"
     assert data["orrorhFields"][0]["value"] == "OR"
     assert data["orrorhFields"][0]["conditions"][0]["name"] == "ORRORH-CREATE-ORDER"
+    assert data["orrorcRecords"] == []
+    assert data["orrorlRecords"] == []

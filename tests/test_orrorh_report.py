@@ -178,6 +178,8 @@ def test_full_copybook_report_ignores_detail_elements():
     assert "ORRORH-CREDIT-CARD-NO = Spaces" in report.report
     assert "ORRORD-DETAIL-ELEMENTS" not in report.report
     assert "CLORC HEADER" not in report.report
+    assert report.comment_records[0]["kind"] == "CL"
+    assert report.comment_records[0]["fields"][0]["value"] == "CL"
     function = report.fields[0]
     assert function["name"] == "ORRORH-REQUEST-FUNCTION"
     assert function["value"] == "OR"

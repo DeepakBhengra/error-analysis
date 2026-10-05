@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -306,10 +306,12 @@ def format_orrorh_report(xml_text: str) -> str:
 @dataclass(frozen=True)
 class OrrorhLookupResult:
     report: str
-    fields: list[dict[str, str]]
+    fields: list[dict[str, Any]]
     xml: str
     v2_found: bool
     source_log_id: str | None
+    comment_records: list[dict[str, Any]] = field(default_factory=list)
+    line_records: list[dict[str, Any]] = field(default_factory=list)
 
 
 _EVENT_STRING_KEYS = (
@@ -449,17 +451,24 @@ def event_matches_order_number(
 
 
 def report_from_substation_xml(xml_text: str) -> OrrorhLookupResult:
+    from error_analysis.order_create.detail_elements import (
+        parse_detail_elements_from_xml,
+    )
+
     fields = build_orrorh_report_fields(xml_text)
     lines = [
         f"{index}. {item['name']} = {item['value']}"
         for index, item in enumerate(fields, start=1)
     ]
+    comments, line_records = parse_detail_elements_from_xml(xml_text)
     return OrrorhLookupResult(
         report="\n".join(lines),
         fields=fields,
         xml=xml_text,
         v2_found=False,
         source_log_id=None,
+        comment_records=comments,
+        line_records=line_records,
     )
 
 
@@ -470,7 +479,20 @@ def empty_orrorh_result(*, v2_found: bool = False) -> OrrorhLookupResult:
         xml="",
         v2_found=v2_found,
         source_log_id=None,
+        comment_records=[],
+        line_records=[],
     )
+
+
+def orrorh_api_payload(result: OrrorhLookupResult) -> dict[str, Any]:
+    return {
+        "orrorhReport": result.report,
+        "orrorhFields": result.fields,
+        "orrorhV2Found": result.v2_found,
+        "orrorhSourceLogId": result.source_log_id,
+        "orrorcRecords": result.comment_records,
+        "orrorlRecords": result.line_records,
+    }
 
 
 def build_substation_search_query(
@@ -568,6 +590,8 @@ def lookup_orrorh_from_events(
         xml=xml,
         v2_found=v2_event is not None,
         source_log_id=log_id,
+        comment_records=result.comment_records,
+        line_records=result.line_records,
     )
 
 

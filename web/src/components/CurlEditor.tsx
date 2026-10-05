@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { guessOrderTypeFromCurl } from '../guessOrderType'
-import type { CurlHttpResponse, CurlPanelTab, OrrorhField } from '../types'
+import type { CurlHttpResponse, CurlPanelTab, OrrorhField, OrrorhRecord } from '../types'
 import { CopyButton } from './CopyButton'
 import { Orrorh88Popup } from './Orrorh88Popup'
 
@@ -17,6 +17,8 @@ interface CurlEditorProps {
   httpResponse?: CurlHttpResponse | null
   substationLogs?: string
   substationFields?: OrrorhField[]
+  commentRecords?: OrrorhRecord[]
+  lineRecords?: OrrorhRecord[]
   onCreateChange: (value: string) => void
   onModifyChange: (value: string) => void
   onResubmit: () => void
@@ -46,10 +48,46 @@ function resolveSubstationFields(
   if (fields.length) return fields
   const parsed: OrrorhField[] = []
   for (const line of report.split('\n')) {
-    const match = line.match(/^\d+\.\s+(ORRORH-[A-Z0-9-]+)\s+=\s+(.*)$/)
+    const match = line.match(/^\d+\.\s+((?:ORROR[HCL])-[A-Z0-9-]+)\s+=\s+(.*)$/)
     if (match) parsed.push({ name: match[1], value: match[2] })
   }
   return parsed
+}
+
+function OrrorhFieldList({
+  fields,
+  onSelect,
+}: {
+  fields: OrrorhField[]
+  onSelect: (field: OrrorhField) => void
+}) {
+  return (
+    <ol className="curl-response-body curl-orrorh-body orrorh-field-list">
+      {fields.map((field, index) => {
+        const clickable = Boolean(
+          field.conditions?.length && field.value.trim() && field.value !== 'Spaces',
+        )
+        return (
+          <li key={`${index}-${field.name}`} className="orrorh-field-row">
+            <span className="orrorh-field-index">{index + 1}.</span>
+            {clickable ? (
+              <button
+                type="button"
+                className="orrorh-field-link"
+                onClick={() => onSelect(field)}
+              >
+                {field.name}
+              </button>
+            ) : (
+              <span className="orrorh-field-name">{field.name}</span>
+            )}
+            <span className="orrorh-field-eq"> = </span>
+            <span className="orrorh-field-value">{field.value}</span>
+          </li>
+        )
+      })}
+    </ol>
+  )
 }
 
 export function CurlEditor({
@@ -64,12 +102,15 @@ export function CurlEditor({
   httpResponse = null,
   substationLogs = '',
   substationFields = [],
+  commentRecords = [],
+  lineRecords = [],
   onCreateChange,
   onModifyChange,
   onResubmit,
   onCancel,
 }: CurlEditorProps) {
   const [conditionField, setConditionField] = useState<OrrorhField | null>(null)
+  const [substationTab, setSubstationTab] = useState<'header' | 'comments' | 'lines'>('header')
   const curl = activeTab === 'modify' ? modifyCurl : createCurl
   const onChange = activeTab === 'modify' ? onModifyChange : onCreateChange
 
@@ -238,50 +279,100 @@ export function CurlEditor({
           </div>
         </div>
       ) : null}
-      {activeTab === 'create' && (createCurl.trim() || substationLogs.trim()) ? (
+      {activeTab === 'create' &&
+      (createCurl.trim() || substationLogs.trim() || commentRecords.length || lineRecords.length) ? (
         <div className="curl-response-panel curl-substation-panel">
           <div className="curl-response-header">
             <h3>Substation Logs</h3>
           </div>
+          <div className="detail-tabs substation-log-tabs" role="tablist" aria-label="Substation parse">
+            <button
+              type="button"
+              className={`detail-tab${substationTab === 'header' ? ' active' : ''}`}
+              onClick={() => setSubstationTab('header')}
+            >
+              Header
+            </button>
+            <button
+              type="button"
+              className={`detail-tab${substationTab === 'comments' ? ' active' : ''}`}
+              onClick={() => setSubstationTab('comments')}
+            >
+              Comment Parse Data{commentRecords.length ? ` (${commentRecords.length})` : ''}
+            </button>
+            <button
+              type="button"
+              className={`detail-tab${substationTab === 'lines' ? ' active' : ''}`}
+              onClick={() => setSubstationTab('lines')}
+            >
+              Line Parse Data{lineRecords.length ? ` (${lineRecords.length})` : ''}
+            </button>
+          </div>
           <p className="curl-hint">
-            ORRORH copybook fields from the OrderUpdate Substation Request for this
-            customer PO. Empty tags are Spaces. ORRORD-DETAIL-ELEMENTS is ignored.
-            Click a highlighted field to view its 88 condition-names.
+            {substationTab === 'header'
+              ? 'ORRORH header fields from the OrderUpdate Substation Request. Empty tags are Spaces. Click a highlighted field to view its 88 condition-names.'
+              : substationTab === 'comments'
+                ? 'ORRORD-DETAIL-ELEMENTS records that start with CL or EC, sliced at 1980 bytes and mapped to the ORRORC copybook.'
+                : 'ORRORD-DETAIL-ELEMENTS records that start with OL, sliced at 1980 bytes and mapped to the ORRORL copybook.'}
           </p>
           <div className="copyable-panel">
-            {substationLogs.trim() ? (
-              <ol className="curl-response-body curl-orrorh-body orrorh-field-list">
-                {resolvedFields.map((field, index) => {
-                  const clickable = Boolean(
-                    field.conditions?.length && field.value.trim() && field.value !== 'Spaces',
-                  )
-                  return (
-                    <li key={`${index}-${field.name}`} className="orrorh-field-row">
-                      <span className="orrorh-field-index">{index + 1}.</span>
-                      {clickable ? (
-                        <button
-                          type="button"
-                          className="orrorh-field-link"
-                          onClick={() => setConditionField(field)}
-                        >
-                          {field.name}
-                        </button>
-                      ) : (
-                        <span className="orrorh-field-name">{field.name}</span>
-                      )}
-                      <span className="orrorh-field-eq"> = </span>
-                      <span className="orrorh-field-value">{field.value}</span>
-                    </li>
-                  )
-                })}
-              </ol>
-            ) : (
-              <pre className="curl-response-body curl-orrorh-body">
-                No Substation Request found for this customer PO.
-              </pre>
-            )}
+            {substationTab === 'header' ? (
+              substationLogs.trim() ? (
+                <OrrorhFieldList fields={resolvedFields} onSelect={setConditionField} />
+              ) : (
+                <pre className="curl-response-body curl-orrorh-body">
+                  No Substation Request found for this customer PO.
+                </pre>
+              )
+            ) : null}
+            {substationTab === 'comments' ? (
+              commentRecords.length ? (
+                <div className="orrorh-record-stack">
+                  {commentRecords.map((record, index) => (
+                    <section key={`c-${index}-${record.kind}`} className="orrorh-record-block">
+                      <h4 className="orrorh-record-title">
+                        Comment {index + 1} ({record.kind})
+                      </h4>
+                      <OrrorhFieldList fields={record.fields} onSelect={setConditionField} />
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <pre className="curl-response-body curl-orrorh-body">
+                  No CL/EC comment records found in ORRORD-DETAIL-ELEMENTS.
+                </pre>
+              )
+            ) : null}
+            {substationTab === 'lines' ? (
+              lineRecords.length ? (
+                <div className="orrorh-record-stack">
+                  {lineRecords.map((record, index) => (
+                    <section key={`l-${index}-${record.kind}`} className="orrorh-record-block">
+                      <h4 className="orrorh-record-title">
+                        Line {index + 1} ({record.kind})
+                      </h4>
+                      <OrrorhFieldList fields={record.fields} onSelect={setConditionField} />
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <pre className="curl-response-body curl-orrorh-body">
+                  No OL line records found in ORRORD-DETAIL-ELEMENTS.
+                </pre>
+              )
+            ) : null}
             <CopyButton
-              text={substationLogs}
+              text={
+                substationTab === 'comments'
+                  ? commentRecords.map((record, index) =>
+                      `Comment ${index + 1} (${record.kind})\n${record.report}`,
+                    ).join('\n\n')
+                  : substationTab === 'lines'
+                    ? lineRecords.map((record, index) =>
+                        `Line ${index + 1} (${record.kind})\n${record.report}`,
+                      ).join('\n\n')
+                    : substationLogs
+              }
               label="Copy Substation Logs"
             />
           </div>
