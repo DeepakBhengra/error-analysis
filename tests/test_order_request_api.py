@@ -414,6 +414,10 @@ def test_order_request_preview_includes_substation_logs(preview_settings, monkey
     assert captured["order_number"] == "USREGTEST12"
     assert captured["from_time"] == "2026-06-01T00:00:00Z"
     assert captured["to_time"] == "2026-07-18T00:00:00Z"
+    identity = captured["identity"]
+    assert identity.po == "USREGTEST12"
+    assert identity.br == "60"
+    assert identity.nbr == "006843"
     assert data["orrorhReport"].startswith("1. ORRORH-REQUEST-FUNCTION = OR")
     assert "ORRORH-CREDIT-CARD-NO = Spaces" in data["orrorhReport"]
     assert "ORRORD-DETAIL-ELEMENTS" not in data["orrorhReport"]

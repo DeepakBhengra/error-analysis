@@ -32,7 +32,9 @@ from error_analysis.order_create.order_number import (
 )
 from error_analysis.error_lookup.client import corora_code_from_statuscode
 from error_analysis.order_create.orrorh_report import (
+    CurlIdentity,
     OrrorhLookupResult,
+    curl_identity_from_order_create,
     empty_orrorh_result,
     fetch_orrorh_lookup,
 )
@@ -399,6 +401,7 @@ def poll_orrorh_report(
     from_time: str | None,
     to_time: str | None,
     env: str | None = None,
+    identity: CurlIdentity | None = None,
     poll_interval: float = ORRORH_LOOKUP_POLL_INTERVAL,
     timeout: float = ORRORH_LOOKUP_TIMEOUT,
 ) -> OrrorhLookupResult:
@@ -417,6 +420,7 @@ def poll_orrorh_report(
                 from_time=poll_from,
                 to_time=poll_to,
                 env=env,
+                identity=identity,
             )
             if last.xml:
                 return last
@@ -434,6 +438,7 @@ def _lookup_orrorh_after_replay(
     to_time: str | None,
     env: str | None,
     out_dir: Path | None,
+    identity: CurlIdentity | None = None,
 ) -> OrrorhLookupResult:
     try:
         result = poll_orrorh_report(
@@ -442,6 +447,7 @@ def _lookup_orrorh_after_replay(
             from_time=from_time,
             to_time=to_time,
             env=env,
+            identity=identity,
         )
     except DatadogError as exc:
         logger.warning("ORRORH Substation lookup skipped: %s", exc)
@@ -567,6 +573,12 @@ def _complete_replay(
     if out_dir is not None:
         _write_json(out_dir / "order-create-replay-logs.json", fetched_records)
 
+    identity = curl_identity_from_order_create(
+        headers=headers,
+        body=new_body,
+        timestamp=int(time.time() * 1000),
+        fallback_po=new_number,
+    )
     orrorh = _lookup_orrorh_after_replay(
         settings,
         order_number=new_number,
@@ -574,6 +586,7 @@ def _complete_replay(
         to_time=to_time,
         env=env,
         out_dir=out_dir,
+        identity=identity,
     )
 
     if check is None:

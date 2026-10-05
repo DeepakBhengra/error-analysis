@@ -28,6 +28,7 @@ from error_analysis.order_create.curl_builder import (
     OrderCreateCurl,
     OrderCreateCurlError,
     build_order_create_curl_from_records,
+    find_order_create_records,
 )
 from error_analysis.order_modify.modify_curl_builder import (
     OrderModifyCurl,
@@ -51,6 +52,8 @@ from error_analysis.order_create.replay import (
     run_replay_from_curl,
 )
 from error_analysis.order_create.orrorh_report import (
+    CurlIdentity,
+    curl_identity_from_order_create,
     empty_orrorh_result,
     fetch_orrorh_lookup,
     orrorh_api_payload,
@@ -564,6 +567,27 @@ def update_app_settings(payload: SettingsUpdateRequest) -> dict[str, Any]:
     return _settings_response(_load_settings())
 
 
+def _identity_from_preview(
+    built: OrderCreateCurl,
+    records: list[dict[str, Any]],
+    *,
+    index: int,
+    fallback_po: str,
+) -> CurlIdentity:
+    timestamp = None
+    bodies = find_order_create_records(records)
+    if 0 <= index < len(bodies):
+        timestamp = bodies[index].get("timestamp")
+    elif records:
+        timestamp = records[0].get("timestamp")
+    return curl_identity_from_order_create(
+        headers=built.headers,
+        body=built.body,
+        timestamp=timestamp,
+        fallback_po=fallback_po,
+    )
+
+
 def _lookup_substation_logs(
     settings: Settings,
     *,
@@ -571,9 +595,12 @@ def _lookup_substation_logs(
     from_time: str,
     to_time: str,
     env: str | None = None,
+    identity: CurlIdentity | None = None,
 ) -> dict[str, Any]:
     """Fetch ORRORH Substation Logs for a customer PO (search or Re-Submit)."""
     po = (order_number or "").strip()
+    if identity and identity.po:
+        po = identity.po
     if not po:
         return orrorh_api_payload(empty_orrorh_result())
     try:
@@ -585,6 +612,7 @@ def _lookup_substation_logs(
                 from_time=from_time,
                 to_time=to_time,
                 env=env,
+                identity=identity,
             )
     except Exception as exc:
         logger.warning("Substation Logs lookup skipped for %r: %s", po, exc)
@@ -674,13 +702,21 @@ def order_request_preview(payload: OrderRequestPreview) -> dict[str, Any]:
     order_number = ""
     if isinstance(built.body.get("customerOrderNumber"), str):
         order_number = built.body["customerOrderNumber"].strip()
+    fallback_po = order_number or text
+    identity = _identity_from_preview(
+        built,
+        fetched.records,
+        index=payload.index,
+        fallback_po=fallback_po,
+    )
 
     substation = _lookup_substation_logs(
         settings,
-        order_number=order_number or text,
+        order_number=fallback_po,
         from_time=search_from,
         to_time=search_to,
         env=payload.env,
+        identity=identity,
     )
 
     return {
