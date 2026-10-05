@@ -386,7 +386,7 @@ def test_order_request_preview_includes_substation_logs(preview_settings, monkey
         <ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>
         <ORRORH-CUSTOMER-BR>30</ORRORH-CUSTOMER-BR>
         <ORRORH-CREDIT-CARD-NO/>
-        <ORRORD-DETAIL-ELEMENTS>IGNORE</ORRORD-DETAIL-ELEMENTS>
+        <ORRORD-DETAIL-ELEMENTS>CLORC                                HEADER</ORRORD-DETAIL-ELEMENTS>
     </ns0:SSOrderEntryRequest>
     """
     lookup = report_from_substation_xml(xml)
@@ -418,3 +418,6 @@ def test_order_request_preview_includes_substation_logs(preview_settings, monkey
     assert "ORRORH-CREDIT-CARD-NO = Spaces" in data["orrorhReport"]
     assert "ORRORD-DETAIL-ELEMENTS" not in data["orrorhReport"]
     assert data["orrorhFields"][0]["name"] == "ORRORH-REQUEST-FUNCTION"
+    assert data["orrorcRecords"][0]["kind"] == "CL"
+    assert data["orrorcRecords"][0]["fields"][0]["value"] == "CL"
+    assert data["orrorlRecords"] == []

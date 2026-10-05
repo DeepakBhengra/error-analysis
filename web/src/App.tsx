@@ -36,6 +36,7 @@ import type {
   SessionResult,
   TabFilter,
   OrrorhField,
+  OrrorhRecord,
 } from './types'
 
 const windowDefaults = defaultSearchWindow()
@@ -61,6 +62,8 @@ export default function App() {
   const [httpResponse, setHttpResponse] = useState<CurlHttpResponse | null>(null)
   const [substationLogs, setSubstationLogs] = useState('')
   const [substationFields, setSubstationFields] = useState<OrrorhField[]>([])
+  const [commentRecords, setCommentRecords] = useState<OrrorhRecord[]>([])
+  const [lineRecords, setLineRecords] = useState<OrrorhRecord[]>([])
   const [previewSource, setPreviewSource] = useState<OrderRequestSource | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingKind, setLoadingKind] = useState<'preview' | 'submit' | null>(null)
@@ -122,6 +125,8 @@ export default function App() {
     })
     setSubstationLogs(data.orrorhReport ?? '')
     setSubstationFields(data.orrorhFields ?? [])
+    setCommentRecords(data.orrorcRecords ?? [])
+    setLineRecords(data.orrorlRecords ?? [])
     setBannerOutcome(data.outcome)
     setBannerMessage(data.message)
     setError(null)
@@ -153,6 +158,8 @@ export default function App() {
     setHttpResponse(null)
     setSubstationLogs('')
     setSubstationFields([])
+    setCommentRecords([])
+    setLineRecords([])
 
     const wantsCreate = curlTypes.includes('create')
     const wantsModify = curlTypes.includes('modify')
@@ -179,6 +186,8 @@ export default function App() {
           setPreviewSource(data.source)
           setSubstationLogs(data.orrorhReport || '')
           setSubstationFields(data.orrorhFields || [])
+          setCommentRecords(data.orrorcRecords || [])
+          setLineRecords(data.orrorlRecords || [])
           messages.push(data.message)
           createFound = Boolean(data.curl?.trim())
         } catch (err) {
@@ -187,6 +196,8 @@ export default function App() {
             setCreateCurl('')
             setSubstationLogs('')
             setSubstationFields([])
+            setCommentRecords([])
+            setLineRecords([])
             skipped.push(`Order Create curl: ${err instanceof ApiError ? err.message : String(err)}`)
           } else {
             throw err
@@ -315,6 +326,8 @@ export default function App() {
     setHttpResponse(null)
     setSubstationLogs('')
     setSubstationFields([])
+    setCommentRecords([])
+    setLineRecords([])
     setPreviewSource(null)
     setError(null)
     setBannerOutcome(null)
@@ -463,6 +476,8 @@ export default function App() {
             httpResponse={httpResponse}
             substationLogs={substationLogs}
             substationFields={substationFields}
+            commentRecords={commentRecords}
+            lineRecords={lineRecords}
             onCreateChange={setCreateCurl}
             onModifyChange={setModifyCurl}
             onResubmit={handleResubmit}

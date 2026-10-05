@@ -1403,6 +1403,26 @@ body {
   background: var(--success-bg);
 }
 
+.substation-log-tabs {
+  margin: 0 0 10px;
+}
+
+.orrorh-record-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.orrorh-record-block .curl-orrorh-body {
+  max-height: 280px;
+}
+
+.orrorh-record-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .curl-response-header {
   display: flex;
   justify-content: space-between;

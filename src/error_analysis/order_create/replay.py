@@ -461,10 +461,12 @@ def _lookup_orrorh_after_replay(
 def _attach_orrorh_summary(
     summary: dict[str, Any], result: OrrorhLookupResult
 ) -> dict[str, Any]:
-    if result.report:
+    if result.report or result.comment_records or result.line_records:
         summary["orrorhReport"] = result.report
         summary["orrorhFields"] = result.fields
         summary["orrorhV2Found"] = result.v2_found
+        summary["orrorcRecords"] = result.comment_records
+        summary["orrorlRecords"] = result.line_records
         if result.source_log_id:
             summary["orrorhSourceLogId"] = result.source_log_id
     return summary
