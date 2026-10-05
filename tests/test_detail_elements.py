@@ -9,6 +9,7 @@ from error_analysis.order_create.copybook_layout import (
 from error_analysis.order_create.detail_elements import (
     DETAIL_RECORD_LENGTH,
     extract_detail_elements,
+    first_detail_record_start,
     parse_detail_element_records,
     parse_detail_elements_from_xml,
     split_detail_records,
@@ -120,6 +121,47 @@ def test_comment_and_line_records_from_sample_xml():
     assert line["ORRORL-CUST-LINE-NBR"]["value"] == "001"
     assert line["ORRORL-ING-PART-NBR"]["value"] == "09WQ36"
     assert line["ORRORL-QTY-ORDERED"]["value"] == "0000001"
+
+
+def test_ol_first_payload_without_cl_parses_line():
+    """PO 12948-style Substation detail starts at OL, not CL."""
+    detail = "\t" + _record(
+        "OL" + (" " * 26) + "001" + (" " * 15) + "80Q65499    0000001"
+    )
+    assert first_detail_record_start(detail) == 1
+    comments, lines = parse_detail_element_records(detail)
+    assert comments == []
+    assert len(lines) == 1
+    line = {item["name"]: item["value"] for item in lines[0]["fields"]}
+    assert line["ORRORL-REQUEST-FUNCTION"] == "OL"
+    assert line["ORRORL-CUST-LINE-NBR"] == "001"
+    assert line["ORRORL-ING-PART-NBR"] == "80Q65499"
+    assert line["ORRORL-QTY-ORDERED"] == "0000001"
+
+
+def test_ol_first_xml_does_not_treat_incl_as_cl_start():
+    """Letters CL inside a later field must not become the record start."""
+    body = _record(
+        "OL" + (" " * 26) + "001" + (" " * 15) + "80Q65499    0000001"
+    )
+    # INCL contains the letters CL; a raw find("CL") would start there and miss OL.
+    poisoned = "  INCL  " + body
+    assert first_detail_record_start(poisoned) == poisoned.find("OL")
+    comments, lines = parse_detail_element_records(poisoned)
+    assert comments == []
+    assert lines[0]["kind"] == "OL"
+    xml = (
+        "<ns0:SSOrderEntryRequest>"
+        "<ORRORH-REQUEST-FUNCTION>OR</ORRORH-REQUEST-FUNCTION>"
+        "<ORRORH-CONFIGURATION-FLAG>Y</ORRORH-CONFIGURATION-FLAG>"
+        f"<ORRORD-DETAIL-ELEMENTS>\t{body}PT</ORRORD-DETAIL-ELEMENTS>"
+        "</ns0:SSOrderEntryRequest>"
+    )
+    result = report_from_substation_xml(xml)
+    assert result.comment_records == []
+    assert result.line_records[0]["fields"][0]["value"] == "OL"
+    by_name = {item["name"]: item["value"] for item in result.line_records[0]["fields"]}
+    assert by_name["ORRORL-ING-PART-NBR"] == "80Q65499"
 
 
 def test_report_from_substation_xml_includes_detail_tabs():

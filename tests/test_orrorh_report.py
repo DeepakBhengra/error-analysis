@@ -3,6 +3,7 @@
 from error_analysis.config import Settings
 from error_analysis.order_create.orrorh_report import (
     COPYBOOK_START_FIELD,
+    ORDER_UPDATE_SERVICE_FILTER,
     SPACES_VALUE,
     SUBSTATION_LOG_DESCRIPTION,
     build_orrorh_report_lines,
@@ -381,7 +382,10 @@ def test_fetch_orrorh_lookup_finds_screenshot_log(monkeypatch):
         to_time="2026-10-02T12:00:00Z",
     )
     assert captured[0] == "P27951376 service:OrderCreate_v2*"
-    assert "P27951376 OrderCreateCallSubstationRequest" in captured
+    assert (
+        f"P27951376 service:{ORDER_UPDATE_SERVICE_FILTER} {SUBSTATION_LOG_DESCRIPTION}"
+        in captured
+    )
     assert all(
         '"P27951376 OrderCreateCallSubstationRequest"' not in query
         for query in captured
@@ -413,6 +417,10 @@ def test_fetch_orrorh_lookup_wildcard_when_po_only_in_correlation_id(monkeypatch
         from_time="2026-09-01T00:00:00Z",
         to_time="2026-10-02T12:00:00Z",
     )
-    assert "P27951376* OrderCreateCallSubstationRequest" in captured
+    assert (
+        f"P27951376* service:{ORDER_UPDATE_SERVICE_FILTER} {SUBSTATION_LOG_DESCRIPTION}"
+        in captured
+        or f"P27951376* {SUBSTATION_LOG_DESCRIPTION}" in captured
+    )
     assert result.source_log_id == "upd-p27951376"
     assert "ORRORH-CUST-TO-ING-PO-NBR = P27951376" in result.report
