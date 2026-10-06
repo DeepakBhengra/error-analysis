@@ -1117,11 +1117,44 @@ def _mount_web_ui(application: FastAPI) -> None:
 _mount_web_ui(app)
 
 
+DEFAULT_BIND_HOST = "127.0.0.1"
+DEFAULT_BIND_PORT = 8010
+
+
+def bind_host() -> str:
+    """Listen address. Set ``ERROR_ANALYSIS_HOST=0.0.0.0`` on a shared server."""
+    raw = (os.environ.get("ERROR_ANALYSIS_HOST") or DEFAULT_BIND_HOST).strip()
+    return raw or DEFAULT_BIND_HOST
+
+
+def bind_port() -> int:
+    """Listen port. Set ``ERROR_ANALYSIS_PORT`` when the server assigns a port."""
+    raw = (os.environ.get("ERROR_ANALYSIS_PORT") or str(DEFAULT_BIND_PORT)).strip()
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise SystemExit(
+            f"ERROR_ANALYSIS_PORT must be an integer, got {raw!r}."
+        ) from exc
+    if not 1 <= port <= 65535:
+        raise SystemExit(
+            f"ERROR_ANALYSIS_PORT must be 1..65535, got {port}."
+        )
+    return port
+
+
 def main() -> None:
     import uvicorn
 
     log_dir = setup_logging()
-    logger.info("Launching Error Analysis API (log_dir=%s)", log_dir)
+    host = bind_host()
+    port = bind_port()
+    logger.info(
+        "Launching Error Analysis API (log_dir=%s host=%s port=%s)",
+        log_dir,
+        host,
+        port,
+    )
 
     # Prefer 8010 so this does not collide with other local tools on 8000
     # (e.g. Legacy COBOL Error Scanner API).
@@ -1133,8 +1166,8 @@ def main() -> None:
     }
     uvicorn.run(
         "error_analysis.api:app",
-        host="127.0.0.1",
-        port=8010,
+        host=host,
+        port=port,
         reload=reload,
     )
 

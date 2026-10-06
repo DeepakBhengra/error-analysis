@@ -9,6 +9,7 @@ venv/
 .pytest_cache/
 results/
 logs/
+error-analysis-server.zip
 *.json
 !tests/fixtures/*.json
 !web/package.json
