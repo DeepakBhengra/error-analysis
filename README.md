@@ -250,14 +250,21 @@ Requires `.venv` with `pip install -r requirements.txt` (or `pip install -e ".[w
 
 ### Host on a server (no Node.js, no venv)
 
-Build once on a machine that matches the server OS, then send the zip. The server
-only needs system `python3` and a port — not Node and not `python3 -m venv`.
-See [`HOSTING.md`](HOSTING.md).
+Numbered steps (build zip with `vendor/`, then start on the server): [`HOSTING.md`](HOSTING.md).
+
+Your machine (puts Python libraries in the zip):
 
 ```bash
+chmod +x scripts/package-server.sh start-server.sh
 ./scripts/package-server.sh
-# send error-analysis-server.zip
-# on the server: copy .env.example to .env, then:
+# send error-analysis-server.zip — do not send .env
+```
+
+Server (no venv):
+
+```bash
+unzip error-analysis-server.zip && cd error-analysis-server
+cp .env.example .env   # fill Datadog + Order Create credentials
 export ERROR_ANALYSIS_HOST=0.0.0.0
 export ERROR_ANALYSIS_PORT=9000   # port the server assigns
 ./start-server.sh
