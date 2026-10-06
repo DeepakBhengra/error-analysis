@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Start API + built UI. The server does not need Node.js when web/dist exists.
+# Start API + built UI using bundled vendor/ modules.
+# No Node.js and no virtualenv on the server when vendor/ is present.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
@@ -11,8 +12,7 @@ export ERROR_ANALYSIS_PORT="$PORT"
 
 if [[ ! -f "$ROOT/web/dist/index.html" ]]; then
   echo "Missing web/dist/index.html." >&2
-  echo "Build the UI on a machine with Node.js (cd web && npm install && npm run build)," >&2
-  echo "then copy web/dist onto this server. Node.js is not required here." >&2
+  echo "Build the UI on a machine with Node.js, then send web/dist with this app." >&2
   exit 1
 fi
 
@@ -21,16 +21,27 @@ if [[ ! -f "$ROOT/.env" ]]; then
   exit 1
 fi
 
-if [[ -x "$ROOT/.venv/bin/python" ]]; then
-  PYTHON="$ROOT/.venv/bin/python"
-elif command -v python3 >/dev/null 2>&1; then
+if command -v python3 >/dev/null 2>&1; then
   PYTHON="python3"
+elif [[ -x "$ROOT/.venv/bin/python" ]]; then
+  PYTHON="$ROOT/.venv/bin/python"
 else
-  echo "Python 3.10+ is required." >&2
+  echo "Python 3.10+ is required on the server (system python3 is enough)." >&2
   exit 1
 fi
 
-export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+PYTHONPATH_PARTS=("$ROOT/src")
+if [[ -d "$ROOT/vendor" ]]; then
+  PYTHONPATH_PARTS+=("$ROOT/vendor")
+fi
+export PYTHONPATH="$(IFS=:; echo "${PYTHONPATH_PARTS[*]}")${PYTHONPATH:+:$PYTHONPATH}"
+
+if ! "$PYTHON" -c "import fastapi, uvicorn, httpx" 2>/dev/null; then
+  echo "Python packages were not found." >&2
+  echo "Send a package built with ./scripts/package-server.sh (it includes vendor/)." >&2
+  echo "The server should not need python3 -m venv when vendor/ is present." >&2
+  exit 1
+fi
 
 echo "Starting Error Analysis on http://${HOST}:${PORT}"
 exec "$PYTHON" -m uvicorn error_analysis.api:app --host "$HOST" --port "$PORT"

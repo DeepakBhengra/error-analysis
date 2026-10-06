@@ -1,86 +1,58 @@
-# Host this application on a server (no Node.js)
+# Host this application on a server (no Node.js, no venv)
 
-The browser UI is static files in `web/dist`. **Node.js is only needed to build those files once**, on a developer machine. The hosting server runs **Python 3.10+** only.
+The browser UI is static files in `web/dist`. Python libraries are copied into `vendor/`.
+The hosting server only needs **system `python3` (3.10+)** and a port.
 
-## What to send the server team
+## What to send
 
-From a machine that **does** have Node.js, create the package:
+On a machine that matches the server OS/CPU (for example both Linux x86_64) and has Node.js:
 
 ```bash
 ./scripts/package-server.sh
 ```
 
-That writes `error-analysis-server.zip`. Send the zip. Do **not** send `.env` (it has secrets). Send `.env.example` and have them fill credentials on the server.
+Send `error-analysis-server.zip`. Do **not** send `.env`.
 
-The zip includes:
+The zip already contains:
 
-- Python source (`src/`, `pyproject.toml`)
-- Prebuilt UI (`web/dist`)
-- `requirements-runtime.txt`
-- `start-server.sh`
-- `.env.example`
+- App source (`src/`)
+- Built UI (`web/dist`)
+- Python libraries (`vendor/` — FastAPI, uvicorn, httpx, …)
+- `start-server.sh` and `.env.example`
 
-It does **not** include Node.js, `web/node_modules`, `.venv`, or `.env`.
+The server team does **not** run `python3 -m venv` or `pip install`.
+
+Package on the same kind of machine the server is. Windows-built `vendor/` will not run on Linux, and the Python minor version should be close (3.12 packaged → 3.12 on the server is safest).
+
+## Server steps
+
+```bash
+unzip error-analysis-server.zip
+cd error-analysis-server
+cp .env.example .env
+# Edit .env: Datadog token/keys, ORDER_CREATE_USERNAME / PASSWORD
+
+export ERROR_ANALYSIS_HOST=0.0.0.0
+export ERROR_ANALYSIS_PORT=9000   # port the server assigns
+./start-server.sh
+```
+
+Open `http://<server-host>:9000`.
 
 ## Server requirements
 
 | Item | Required |
 |------|----------|
-| Python 3.10 or newer | Yes |
-| `pip` / `venv` | Yes (to install FastAPI, uvicorn, httpx, …) |
-| Node.js / npm | **No** (UI is already built) |
+| System `python3` 3.10+ | Yes |
+| `python3 -m venv` / pip on the server | **No** (modules are in `vendor/`) |
+| Node.js / npm | **No** |
 | Database | No |
-| Port | Whatever the server assigns (`ERROR_ANALYSIS_PORT`) |
-| Outbound HTTPS to Datadog (`api.us5.datadoghq.com`) | Yes (log search) |
-| Outbound access to Ingram Order Create UAT/QA (`*:9043`) | Yes for RUN / Re-Submit (usually corporate network/VPN) |
-
-Python still needs a virtualenv **or** a system install of the packages in `requirements-runtime.txt`. The UI build does not replace Python.
-
-## Server install
-
-```bash
-unzip error-analysis-server.zip
-cd error-analysis-server
-
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-runtime.txt
-
-cp .env.example .env
-# Edit .env: Datadog token/keys, ORDER_CREATE_USERNAME / PASSWORD
-```
-
-If the server cannot reach PyPI, build a `wheels/` folder on a machine that can, and send that too:
-
-```bash
-pip download -r requirements-runtime.txt -d wheels
-```
-
-On the server:
-
-```bash
-.venv/bin/pip install --no-index --find-links wheels -r requirements-runtime.txt
-```
-
-## Start (server assigns the port)
-
-```bash
-export ERROR_ANALYSIS_HOST=0.0.0.0
-export ERROR_ANALYSIS_PORT=9000   # use the port the server gives you
-./start-server.sh
-```
-
-Or:
-
-```bash
-.venv/bin/uvicorn error_analysis.api:app --host 0.0.0.0 --port 9000
-```
-
-Open `http://<server-host>:9000`. Leave the process running (systemd, service account, etc.).
-
-`0.0.0.0` means “accept connections from other machines”. `127.0.0.1` is laptop-only.
+| Port | `ERROR_ANALYSIS_PORT` |
+| Outbound HTTPS to Datadog | Yes |
+| Outbound access to Ingram Order Create `:9043` | Yes for RUN / Re-Submit (corporate network/VPN) |
 
 ## Optional
 
-- Error-code popup needs the separate Legacy COBOL Error Scanner. Point `LOOKUP_API_URL` at it, or skip it; search/replay still work.
+- Error-code popup needs the separate Legacy COBOL Error Scanner (`LOOKUP_API_URL`). Search/replay work without it.
 - Put HTTPS in front with nginx/IIS if users reach this over the network.
-- The process must be able to write `.env` if anyone uses the Settings page, and `logs/` for application logs.
+- The process must be able to write `.env` if anyone uses Settings, and `logs/` for application logs.

@@ -1,5 +1,6 @@
-# Runtime only (no pytest). Use this on the hosting server.
-# Keep version ranges in sync with pyproject.toml.
+# Optional fallback if you are not using the packaged vendor/ folder.
+# Prefer ./scripts/package-server.sh — that zip already includes vendor/,
+# so the server does not create a virtualenv.
 #
 #   python3 -m venv .venv
 #   .venv/bin/pip install -r requirements-runtime.txt

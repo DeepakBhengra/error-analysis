@@ -248,15 +248,16 @@ Opens http://127.0.0.1:8010 — leave the console window open; Ctrl+C to stop.
 
 Requires `.venv` with `pip install -r requirements.txt` (or `pip install -e ".[web]"`), Node.js for the build step, and a configured `.env`.
 
-### Host on a server (no Node.js)
+### Host on a server (no Node.js, no venv)
 
-Build the UI once on a machine that has Node, then send Python + `web/dist` to the server.
-The server only needs Python 3.10+ and a port. See [`HOSTING.md`](HOSTING.md).
+Build once on a machine that matches the server OS, then send the zip. The server
+only needs system `python3` and a port — not Node and not `python3 -m venv`.
+See [`HOSTING.md`](HOSTING.md).
 
 ```bash
 ./scripts/package-server.sh
 # send error-analysis-server.zip
-# on the server:
+# on the server: copy .env.example to .env, then:
 export ERROR_ANALYSIS_HOST=0.0.0.0
 export ERROR_ANALYSIS_PORT=9000   # port the server assigns
 ./start-server.sh
