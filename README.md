@@ -248,6 +248,36 @@ Opens http://127.0.0.1:8010 — leave the console window open; Ctrl+C to stop.
 
 Requires `.venv` with `pip install -r requirements.txt` (or `pip install -e ".[web]"`), Node.js for the build step, and a configured `.env`.
 
+### Host on a server or another laptop (no Node.js, no venv)
+
+Numbered steps: [`HOSTING.md`](HOSTING.md). Build the zip on the **same OS** as the other computer.
+
+Your machine (puts Python libraries in the zip):
+
+Windows PowerShell (do **not** run `chmod`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-server.ps1
+```
+
+Linux / macOS:
+
+```bash
+chmod +x scripts/package-server.sh start-server.sh start-laptop.sh
+./scripts/package-server.sh
+```
+
+Send `error-analysis-server.zip` — do not send `.env`.
+
+Their laptop (Python only — no Node.js):
+
+```bash
+unzip error-analysis-server.zip && cd error-analysis-server
+cp .env.example .env   # they fill Datadog + Order Create credentials
+./start-laptop.sh      # Windows: double-click "Start Error Analysis Laptop.bat"
+# open http://127.0.0.1:8010
+```
+
 UI flow:
 
 - Enter a customer order number, choose One-up or Random, click **RUN**
