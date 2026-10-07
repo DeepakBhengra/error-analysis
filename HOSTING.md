@@ -128,46 +128,173 @@ Build the zip on the **same kind of laptop** they have:
 
 A Linux zip will not start on a Windows laptop (`vendor/` contains OS-specific files).
 
-### On their laptop
+### On their laptop (detailed)
 
-1. Copy `error-analysis-server.zip` onto their laptop and unzip it.
-2. Open the `error-analysis-server` folder.
-3. Confirm Python:
+Do this **on their laptop**, not on yours. They need Python 3.10+ already installed. They do not install Node.js.
+
+#### 1. Copy the zip onto their laptop
+
+- Email, USB, OneDrive, or a shared folder is fine.
+- Put `error-analysis-server.zip` somewhere easy, for example:
+  - Windows: `C:\Users\<their-name>\Downloads\`
+  - Linux/macOS: `~/Downloads/`
+
+#### 2. Unzip it
+
+**Windows**
+
+1. Open File Explorer and go to Downloads.
+2. Right-click `error-analysis-server.zip` → **Extract All…**
+3. Click **Extract** (keep the suggested folder).
+4. You should get a folder named `error-analysis-server`.
+5. Open that folder. You should see at least:
+   - `start-laptop.ps1`
+   - `Start Error Analysis Laptop.bat`
+   - `.env.example`
+   - `src`
+   - `vendor`
+   - `web` (inside it, `dist`)
+
+If Windows hid the `.zip` ending, the file still opens with Extract All.
+
+**Linux / macOS**
+
+1. Open a terminal.
+2. Run:
 
    ```bash
-   python3 --version
+   cd ~/Downloads
+   unzip error-analysis-server.zip
+   cd error-analysis-server
    ```
 
-   On Windows, `python --version` or `py --version` is enough.
-
-4. Create `.env` on **their** laptop (do not send yours):
+3. Confirm files:
 
    ```bash
-   cp .env.example .env
+   ls
    ```
 
-   On Windows, copy `.env.example` to `.env` in File Explorer. Edit it and set Datadog + Order Create credentials.
+   You should see `start-laptop.sh`, `.env.example`, `src`, `vendor`, `web`.
 
-5. Start the app (this laptop only, port 8010):
+#### 3. Create `.env` from the example
 
-   **Linux / macOS**
+This file holds Datadog and Order Create passwords. Create it on **their** laptop. Do not copy your `.env`.
 
-   ```bash
-   chmod +x start-laptop.sh start-server.sh
-   ./start-laptop.sh
-   ```
+**Windows (File Explorer)**
 
-   **Windows**
+1. In the `error-analysis-server` folder, click **View** → enable **File name extensions** (so you can see `.example`).
+2. Right-click `.env.example` → **Copy**.
+3. Right-click empty space in the same folder → **Paste**.
+4. Right-click the copy → **Rename**.
+5. Name it exactly `.env` (dot, then `env`, no `.txt` and no `.example`).
+   - If Windows says “If you change a file name extension, the file might become unusable”, click **Yes**.
+   - If the file becomes `.env.txt`, rename again and remove `.txt`.
+6. Right-click `.env` → **Open with** → **Notepad**.
 
-   Double-click `Start Error Analysis Laptop.bat`, or in PowerShell:
+**Linux / macOS**
 
-   ```powershell
-   .\start-laptop.ps1
-   ```
+```bash
+cp .env.example .env
+nano .env
+```
 
-6. Open http://127.0.0.1:8010 in a browser. Leave the terminal window open. Ctrl+C stops it.
+(`nano` is optional; any text editor is fine.)
 
-They still need internet to Datadog, and corporate VPN if they will RUN / Re-Submit orders.
+#### 4. Fill credentials in `.env`
+
+Leave the other lines as they are. Change only these.
+
+**Datadog (pick one option, not both):**
+
+- Option A (preferred): set `DD_ACCESS_TOKEN` to their Personal/Service Access Token (logs read). Leave `DD_API_KEY` / `DD_APP_KEY` as placeholders or empty.
+- Option B: set `DD_API_KEY` and `DD_APP_KEY` (app key needs `logs_read_data`). Leave `DD_ACCESS_TOKEN` empty.
+
+Keep:
+
+```env
+DD_SITE=us5.datadoghq.com
+```
+
+**Order Create replay (needed for RUN / Re-Submit):**
+
+```env
+ORDER_CREATE_USERNAME=their_username
+ORDER_CREATE_PASSWORD=their_password
+```
+
+Example of a filled block (fake values):
+
+```env
+DD_ACCESS_TOKEN=their_datadog_token_here
+DD_API_KEY=
+DD_APP_KEY=
+DD_SITE=us5.datadoghq.com
+ORDER_CREATE_USERNAME=APPIMEAI
+ORDER_CREATE_PASSWORD=secret
+```
+
+Save the file and close the editor.
+
+They can skip Order Modify and lookup lines for a first run. Error-code popup needs the COBOL scanner later; search still works without it.
+
+#### 5. Confirm Python is installed
+
+**Windows** — open Command Prompt or PowerShell:
+
+```powershell
+python --version
+```
+
+If that fails:
+
+```powershell
+py --version
+```
+
+You want `Python 3.10` or newer.
+
+**Linux / macOS:**
+
+```bash
+python3 --version
+```
+
+#### 6. Start the app
+
+**Windows**
+
+1. Stay in the `error-analysis-server` folder in File Explorer.
+2. Double-click `Start Error Analysis Laptop.bat`.
+3. A black window opens. Wait until it prints something like:
+
+   `Starting Error Analysis on http://127.0.0.1:8010`
+
+4. Leave that window open. Closing it stops the app.
+
+If double-click fails, open PowerShell **in that folder** (File Explorer address bar: type `powershell` and Enter) and run:
+
+```powershell
+.\start-laptop.ps1
+```
+
+**Linux / macOS**
+
+```bash
+chmod +x start-laptop.sh start-server.sh
+./start-laptop.sh
+```
+
+Leave the terminal open. You should see `Starting Error Analysis on http://127.0.0.1:8010`.
+
+#### 7. Open the UI
+
+1. Open Chrome or Edge.
+2. Go to http://127.0.0.1:8010
+3. Use Search / RUN as usual.
+
+To stop: go to the black window / terminal, press **Ctrl+C**, then you can close it.
+
+They still need internet to Datadog. For RUN / Re-Submit they need corporate VPN so the laptop can reach Ingram Order Create hosts.
 
 ---
 
