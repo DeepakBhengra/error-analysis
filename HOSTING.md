@@ -13,51 +13,44 @@ Package on the **same OS and CPU** as the server (Linux x86_64 → Linux x86_64)
 
 These steps create `error-analysis-server.zip` with `vendor/` (FastAPI, uvicorn, httpx, …).
 
-1. Install **Python 3.10+** and **Node.js + npm** on this machine (not on the server).
-2. Open a terminal in the project root (the folder that contains `scripts/package-server.sh`).
-3. Confirm you can reach PyPI (the script downloads the Python libraries here, once):
+You are on **Windows PowerShell**. Skip `chmod` — that command is Linux/macOS only.
 
-   ```bash
-   python3 --version
-   python3 -m pip --version
+1. Install **Python 3.10+** and **Node.js + npm** on this machine (not on the other laptop).
+2. Open PowerShell in the project root (the folder that contains `scripts\package-server.ps1`), for example `C:\Error_analsysis`.
+3. Confirm tools:
+
+   ```powershell
+   python --version
+   python -m pip --version
    npm --version
    ```
 
-4. Make the packager executable (Linux/macOS):
+4. Build the UI and copy the Python libraries into the zip:
 
-   ```bash
-   chmod +x scripts/package-server.sh start-server.sh
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\package-server.ps1
    ```
 
-5. Build the UI and copy the Python libraries into the zip:
+   That one command:
 
-   ```bash
-   ./scripts/package-server.sh
+   - runs `npm install` / `npm run build` → `web\dist`
+   - runs `pip install -r requirements-vendor.txt -t vendor\`
+   - writes `error-analysis-server.zip` in the project root
+
+5. Confirm the zip is there:
+
+   ```powershell
+   dir error-analysis-server.zip
    ```
 
-   That single command:
+6. Send **`error-analysis-server.zip`**. Do **not** send `.env`.
 
-   - runs `npm install` / `npm run build` → `web/dist`
-   - runs `pip install -r requirements-vendor.txt -t vendor/`
-   - zips app + `web/dist` + `vendor/` → `error-analysis-server.zip`
+**Linux / macOS packager** (not PowerShell):
 
-   Optional output path:
-
-   ```bash
-   ./scripts/package-server.sh /path/to/error-analysis-server.zip
-   ```
-
-6. Check the zip actually contains the libraries and the UI (and not secrets):
-
-   ```bash
-   unzip -l error-analysis-server.zip | grep -E 'vendor/fastapi/__init__.py|web/dist/index.html|\.env$'
-   ```
-
-   You should see `vendor/fastapi/...` and `web/dist/index.html`. You should **not** see a `.env` file.
-
-7. Send **`error-analysis-server.zip`** to the hosting team. Also send this file (`HOSTING.md`) if they do not have the repo.
-
-8. Do **not** send `.env`. Credentials are filled on the server in Part B.
+```bash
+chmod +x scripts/package-server.sh start-server.sh start-laptop.sh
+./scripts/package-server.sh
+```
 
 ---
 

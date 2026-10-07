@@ -254,11 +254,20 @@ Numbered steps: [`HOSTING.md`](HOSTING.md). Build the zip on the **same OS** as 
 
 Your machine (puts Python libraries in the zip):
 
+Windows PowerShell (do **not** run `chmod`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-server.ps1
+```
+
+Linux / macOS:
+
 ```bash
 chmod +x scripts/package-server.sh start-server.sh start-laptop.sh
 ./scripts/package-server.sh
-# send error-analysis-server.zip — do not send .env
 ```
+
+Send `error-analysis-server.zip` — do not send `.env`.
 
 Their laptop (Python only — no Node.js):
 
