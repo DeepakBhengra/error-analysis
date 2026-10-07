@@ -248,26 +248,25 @@ Opens http://127.0.0.1:8010 — leave the console window open; Ctrl+C to stop.
 
 Requires `.venv` with `pip install -r requirements.txt` (or `pip install -e ".[web]"`), Node.js for the build step, and a configured `.env`.
 
-### Host on a server (no Node.js, no venv)
+### Host on a server or another laptop (no Node.js, no venv)
 
-Numbered steps (build zip with `vendor/`, then start on the server): [`HOSTING.md`](HOSTING.md).
+Numbered steps: [`HOSTING.md`](HOSTING.md). Build the zip on the **same OS** as the other computer.
 
 Your machine (puts Python libraries in the zip):
 
 ```bash
-chmod +x scripts/package-server.sh start-server.sh
+chmod +x scripts/package-server.sh start-server.sh start-laptop.sh
 ./scripts/package-server.sh
 # send error-analysis-server.zip — do not send .env
 ```
 
-Server (no venv):
+Their laptop (Python only — no Node.js):
 
 ```bash
 unzip error-analysis-server.zip && cd error-analysis-server
-cp .env.example .env   # fill Datadog + Order Create credentials
-export ERROR_ANALYSIS_HOST=0.0.0.0
-export ERROR_ANALYSIS_PORT=9000   # port the server assigns
-./start-server.sh
+cp .env.example .env   # they fill Datadog + Order Create credentials
+./start-laptop.sh      # Windows: double-click "Start Error Analysis Laptop.bat"
+# open http://127.0.0.1:8010
 ```
 
 UI flow:

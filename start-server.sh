@@ -23,10 +23,14 @@ fi
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON="python3"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON="python"
+elif command -v py >/dev/null 2>&1; then
+  PYTHON="py"
 elif [[ -x "$ROOT/.venv/bin/python" ]]; then
   PYTHON="$ROOT/.venv/bin/python"
 else
-  echo "Python 3.10+ is required on the server (system python3 is enough)." >&2
+  echo "Python 3.10+ is required (system python3/python is enough)." >&2
   exit 1
 fi
 

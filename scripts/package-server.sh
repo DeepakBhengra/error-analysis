@@ -53,11 +53,15 @@ tar -C "$ROOT" -cf - \
   .env.example \
   HOSTING.md \
   start-server.sh \
+  start-laptop.sh \
+  start-laptop.ps1 \
+  "Start Error Analysis Laptop.bat" \
   web/dist \
   web/package.json \
   | tar -C "$STAGE/error-analysis-server" -xf -
 
-chmod +x "$STAGE/error-analysis-server/start-server.sh"
+chmod +x "$STAGE/error-analysis-server/start-server.sh" \
+  "$STAGE/error-analysis-server/start-laptop.sh"
 
 echo "Vendoring Python modules into the zip (so the server skips venv)..."
 "$PACKAGER_PYTHON" -m pip install \

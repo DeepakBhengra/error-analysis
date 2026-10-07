@@ -1,9 +1,9 @@
-# Host this application on a server (no Node.js, no venv)
+# Host this application without Node.js (server or another laptop)
 
 Two machines:
 
 1. **Your machine** (has Node.js and Python) — builds the UI and **puts the Python libraries inside the zip**.
-2. **The server** (system `python3` only) — unzips and starts. No Node.js, no `venv`, no `pip`.
+2. **Their machine** (system Python only) — a server or another laptop. Unzip and start. No Node.js, no `venv`, no `pip`.
 
 Package on the **same OS and CPU** as the server (Linux x86_64 → Linux x86_64). A Windows zip will not run on Linux. Use a Python version close to the server (3.12 → 3.12 is safest).
 
@@ -114,7 +114,64 @@ The zip already has `vendor/`. The server does not run `python3 -m venv` or `pip
 
 ---
 
-## Server requirements
+## Part C — Another laptop that only has Python (no Node.js)
+
+Same zip as Part A. The other person does **not** install Node.js, npm, or a virtualenv. They only need **Python 3.10+**.
+
+Build the zip on the **same kind of laptop** they have:
+
+| Their laptop | You must run `./scripts/package-server.sh` on |
+|--------------|-----------------------------------------------|
+| Windows      | Windows (same 64-bit, similar Python 3.12)    |
+| Linux        | Linux                                         |
+| macOS        | macOS                                         |
+
+A Linux zip will not start on a Windows laptop (`vendor/` contains OS-specific files).
+
+### On their laptop
+
+1. Copy `error-analysis-server.zip` onto their laptop and unzip it.
+2. Open the `error-analysis-server` folder.
+3. Confirm Python:
+
+   ```bash
+   python3 --version
+   ```
+
+   On Windows, `python --version` or `py --version` is enough.
+
+4. Create `.env` on **their** laptop (do not send yours):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   On Windows, copy `.env.example` to `.env` in File Explorer. Edit it and set Datadog + Order Create credentials.
+
+5. Start the app (this laptop only, port 8010):
+
+   **Linux / macOS**
+
+   ```bash
+   chmod +x start-laptop.sh start-server.sh
+   ./start-laptop.sh
+   ```
+
+   **Windows**
+
+   Double-click `Start Error Analysis Laptop.bat`, or in PowerShell:
+
+   ```powershell
+   .\start-laptop.ps1
+   ```
+
+6. Open http://127.0.0.1:8010 in a browser. Leave the terminal window open. Ctrl+C stops it.
+
+They still need internet to Datadog, and corporate VPN if they will RUN / Re-Submit orders.
+
+---
+
+## Their machine requirements
 
 | Item | Required |
 |------|----------|

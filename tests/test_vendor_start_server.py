@@ -45,3 +45,32 @@ def test_start_server_uses_vendor_without_venv(tmp_path: Path, monkeypatch):
     assert result.returncode == 0, result.stderr
     assert "imports-ok" in result.stdout
     assert "venv" not in result.stdout.lower()
+
+
+def test_start_laptop_defaults_to_localhost(tmp_path: Path):
+    root = tmp_path / "error-analysis-server"
+    root.mkdir()
+    (root / "start-server.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        "echo host=$ERROR_ANALYSIS_HOST port=$ERROR_ANALYSIS_PORT\n",
+        encoding="utf-8",
+    )
+    (root / "start-server.sh").chmod(0o755)
+    repo_script = Path(__file__).resolve().parents[1] / "start-laptop.sh"
+    starter = root / "start-laptop.sh"
+    starter.write_text(repo_script.read_text(encoding="utf-8"), encoding="utf-8")
+    starter.chmod(0o755)
+    env = os.environ.copy()
+    env.pop("ERROR_ANALYSIS_HOST", None)
+    env.pop("ERROR_ANALYSIS_PORT", None)
+    result = subprocess.run(
+        ["bash", str(starter)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "host=127.0.0.1" in result.stdout
+    assert "port=8010" in result.stdout
