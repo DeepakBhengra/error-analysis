@@ -22,7 +22,11 @@ extended specs become HTTP headers in v6; use
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_SHIP_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$")
+_DATE_SERIAL_NAMES = frozenset({"date|serial", "date|serialnumber"})
 
 # v2 creditcarddetails key -> v6 creditCardDetails key
 CREDIT_CARD_FIELD_MAP: dict[str, str] = {
@@ -114,6 +118,21 @@ VMF_FIELD_MAP: dict[str, str] = {
     "vendauthnumber": "vendAuthNumber",
     "csnumber": "csnNumber",
     "vendornumber": "vendorNumber",
+}
+
+# v2 shiptoaddress key -> v6 shipToInfo key.
+SHIP_TO_FIELD_MAP: dict[str, str] = {
+    "addressline1": "addressLine1",
+    "addressline2": "addressLine2",
+    "addressline3": "addressLine3",
+    "addressline4": "addressLine4",
+    "city": "city",
+    "state": "state",
+    "postalcode": "postalCode",
+    "countrycode": "countryCode",
+    "email": "email",
+    "phonenumber": "phoneNumber",
+    "company": "companyName",
 }
 
 # v2 line field -> v6 line field (rich mode).
@@ -234,6 +253,54 @@ def _convert_phone_number(value: Any) -> Any:
     if isinstance(value, str) and value.strip().isdigit():
         return int(value.strip())
     return value
+
+
+def _parse_date_serial(value: str) -> dict[str, str]:
+    """Parse v2 ``Date|Serial`` values like ``N~|SN-DUMMY01||||11/11/26``."""
+    serial = ""
+    ship_date = ""
+    for part in value.split("|"):
+        token = part.strip()
+        if not token or token in {"N~", "Y~", "N", "Y"}:
+            continue
+        if _SHIP_DATE_RE.match(token):
+            ship_date = token
+            continue
+        if not serial:
+            serial = token
+    info: dict[str, str] = {}
+    if serial:
+        info["primarySerialNumber"] = serial
+    if ship_date:
+        info["shipDate"] = ship_date
+    return info
+
+
+def _warranty_info_from_line(line: dict[str, Any]) -> dict[str, Any] | None:
+    """Build v6 ``warrantyInfo.serialInfo`` from v2 line specs when present."""
+    serial = ""
+    ship_date = ""
+    spec_groups = (
+        line.get("serviceextendedspecs"),
+        line.get("productextendedspecs"),
+    )
+    for specs in spec_groups:
+        for name, value in _spec_pairs(specs):
+            lower = name.lower().replace(" ", "")
+            if lower in _DATE_SERIAL_NAMES:
+                parsed = _parse_date_serial(value)
+                serial = serial or parsed.get("primarySerialNumber", "")
+                ship_date = ship_date or parsed.get("shipDate", "")
+            elif lower in {"lcnsgsrvnumber", "lcnsg_srv_nbr_flg"} and not serial:
+                serial = value
+    if not serial and not ship_date:
+        return None
+    entry: dict[str, str] = {}
+    if serial:
+        entry["primarySerialNumber"] = serial
+    if ship_date:
+        entry["shipDate"] = ship_date
+    return {"serialInfo": [entry]}
 
 
 def _to_bool(value: str) -> bool:
@@ -488,7 +555,10 @@ def _convert_line_rich(
     if has_basket and not is_warranty and has_nonzero_price:
         converted["specialBidNumber"] = ""
 
-    if is_warranty:
+    warranty = _warranty_info_from_line(line)
+    if warranty is not None:
+        converted["warrantyInfo"] = warranty
+    elif is_warranty:
         converted["warrantyInfo"] = {}
     end_user = _convert_line_end_user(line.get("enduser"), always_emit=False)
     if end_user is not None:
@@ -638,6 +708,17 @@ def convert_v2_to_v6(
             )
             if contact:
                 ship_to["contact"] = contact
+            company = _clean_str(ship_address.get("company")) or _clean_str(
+                ship_address.get("name2")
+            )
+            if company:
+                ship_to["companyName"] = company
+            for v2_key, v6_key in SHIP_TO_FIELD_MAP.items():
+                if v6_key in ship_to:
+                    continue
+                value = _clean_str(ship_address.get(v2_key))
+                if value:
+                    ship_to[v6_key] = value
         if ship_to:
             body["shipToInfo"] = ship_to
 
@@ -709,6 +790,7 @@ def convert_v2_to_v6(
     )
 
     if rich:
+        shipment: dict[str, Any] = {}
         signature = next(
             (
                 value
@@ -718,7 +800,15 @@ def convert_v2_to_v6(
             None,
         )
         if signature is not None:
-            body["shipmentDetails"] = {"signatureRequired": _to_bool(signature)}
+            shipment["signatureRequired"] = _to_bool(signature)
+        carrier = _clean_str(details.get("carriercode"))
+        if carrier:
+            shipment["carrierCode"] = carrier
+        freight = _clean_str(details.get("thirdpartyfrieghtaccountnumber"))
+        if freight:
+            shipment["freightAccountNumber"] = freight
+        if shipment:
+            body["shipmentDetails"] = shipment
 
     if sap:
         attributes = _build_sap_additional_attributes(specs, allow_partial)
