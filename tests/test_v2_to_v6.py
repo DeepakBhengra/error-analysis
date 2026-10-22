@@ -430,3 +430,65 @@ def test_missing_customerponumber_raises() -> None:
                 }
             }
         )
+
+
+def test_rich_line_maps_date_serial_to_warranty_info() -> None:
+    request = {
+        "ordercreaterequest": {
+            "ordercreatedetails": {
+                "customerponumber": "1783460XIPDate03",
+                "billtosuffix": "000",
+                "carriercode": "FC",
+                "shiptoaddress": {
+                    "attention": "DR. ANNA SCHMIDT",
+                    "addressline1": "HELIXNOVA BIOTECHNOLOGIE GMBH",
+                    "addressline2": "BERLIN BIOTECH CAMPUS",
+                    "city": "BERLIN",
+                    "countrycode": "DE",
+                },
+                "extendedspecs": [
+                    {"attributename": "basketid", "attributevalue": "abc"},
+                    {
+                        "attributename": "signaturerequired",
+                        "attributevalue": "N",
+                    },
+                ],
+                "lines": [
+                    {
+                        "linetype": "P",
+                        "linenumber": "001",
+                        "globalskuid": "A302-CI11648",
+                        "quantity": 1.0,
+                        "unitprice": -1.0,
+                        "productextendedspecs": [
+                            {
+                                "attributename": "lcnsgsrvnumber",
+                                "attributevalue": "SN-DUMMY01",
+                            }
+                        ],
+                        "serviceextendedspecs": [
+                            {
+                                "attributename": "Date|Serial",
+                                "attributevalue": "N~|SN-DUMMY01||||11/11/26",
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    body = convert_v2_to_v6(request)
+    assert body["shipmentDetails"]["carrierCode"] == "FC"
+    assert body["shipmentDetails"]["signatureRequired"] is False
+    assert body["shipToInfo"]["contact"] == "DR. ANNA SCHMIDT"
+    assert body["shipToInfo"]["addressLine1"] == "HELIXNOVA BIOTECHNOLOGIE GMBH"
+    assert body["shipToInfo"]["city"] == "BERLIN"
+    line = body["lines"][0]
+    assert line["warrantyInfo"] == {
+        "serialInfo": [
+            {
+                "primarySerialNumber": "SN-DUMMY01",
+                "shipDate": "11/11/26",
+            }
+        ]
+    }

@@ -33,8 +33,18 @@ PROD_ORDER_HOSTS: frozenset[str] = frozenset(
         "uschileai1404",
     }
 )
+# QA TIBCO Order Create hosts (AsyncOrderCreate on 2402, OrderCreate_v2 on 2403).
+QA_ORDER_HOSTS: frozenset[str] = frozenset(
+    {
+        "uschleai2401",
+        "uschleai2402",
+        "uschleai2403",
+        "uschleai2404",
+    }
+)
+PORTAL_V6_BODY_HOSTS: frozenset[str] = PROD_ORDER_HOSTS | QA_ORDER_HOSTS
 # Backward-compatible alias (async feature originally used this name).
-ASYNC_BODY_HOSTS: frozenset[str] = PROD_ORDER_HOSTS
+ASYNC_BODY_HOSTS: frozenset[str] = PORTAL_V6_BODY_HOSTS
 
 # Prod service families are versioned, e.g. OrderCreate_v6_1 / OrderCreate_v2_0.
 V6_SERVICE_PREFIX = "OrderCreate_v6"
@@ -101,7 +111,18 @@ def resolve_order_create_url(
     """
     normalized_target = (target or "").strip().lower()
     if (
-        (_is_prod_v6_body_service(service) or _is_v2_family_service(service))
+        _is_prod_v6_body_service(service)
+        and (host or "") in PORTAL_V6_BODY_HOSTS
+        and normalized_target
+    ):
+        if normalized_target not in TARGET_URLS:
+            raise OrderCreateCurlError(
+                f"Unsupported target {target!r}. Expected one of: "
+                f"{', '.join(sorted(TARGET_URLS))}."
+            )
+        return TARGET_URLS[normalized_target]
+    if (
+        _is_v2_family_service(service)
         and (host or "") in PROD_ORDER_HOSTS
         and normalized_target
     ):
@@ -350,26 +371,28 @@ def is_v6_body_record(record: dict[str, Any]) -> bool:
 
 
 def is_prod_v6_body_record(record: dict[str, Any]) -> bool:
-    """True for prod v6 portal bodies on uschileai1401-1404.
+    """True for portal v6 bodies on prod (uschileai1401-04) or QA (uschleai2401-04).
 
-    Covers AsyncOrderCreate as well as the synchronous prod services
-    (OrderCreate_v6, OrderCreate_v6_1, ...).
+    Covers AsyncOrderCreate as well as the synchronous services
+    (OrderCreate_v6, OrderCreate_v6_1, ...). QA AsyncOrderCreate starter
+    requests (e.g. uschleai2402) already carry the reseller v6 body,
+    including warrantyInfo.serialInfo — prefer those over converting v2.
     """
     request = record.get("request")
     return (
         _is_prod_v6_body_service(record.get("service"))
-        and record.get("host") in PROD_ORDER_HOSTS
+        and record.get("host") in PORTAL_V6_BODY_HOSTS
         and isinstance(request, dict)
         and is_portal_order_body(request)
     )
 
 
 def is_async_v6_body_record(record: dict[str, Any]) -> bool:
-    """True for prod AsyncOrderCreate records on uschileai1401-1404 with a v6 body."""
+    """True for AsyncOrderCreate records with a portal v6 body (prod or QA)."""
     request = record.get("request")
     return (
         record.get("service") == ASYNC_BODY_SERVICE
-        and record.get("host") in PROD_ORDER_HOSTS
+        and record.get("host") in PORTAL_V6_BODY_HOSTS
         and isinstance(request, dict)
         and is_portal_order_body(request)
     )
@@ -515,9 +538,9 @@ def find_async_header_record(records: list[dict[str, Any]]) -> dict[str, Any] | 
 
 
 def find_order_create_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Body candidates: prefer prod v6 (Async/OrderCreate_v6_* on uschileai1401-04),
-    then portal OrderCreate_v6/uschileai2503, then mapped v2, else prod
-    OrderCreate_v2* (v2-to-v6 conversion)."""
+    """Body candidates: prefer portal v6 (Async/OrderCreate_v6_* on prod 1401-04
+    or QA 2401-04), then portal OrderCreate_v6/uschileai2503, then mapped v2,
+    else OrderCreate_v2* (v2-to-v6 conversion)."""
     prod_bodies = find_prod_v6_body_records(records)
     if prod_bodies:
         return prod_bodies
@@ -560,10 +583,10 @@ def should_stop_order_create_fetch(
         if find_v2_header_record(records) is None:
             return False
         return last_page
-    if is_mapped_v2_body_record(body_record) or is_convertible_v2_body_record(
-        body_record
-    ):
-        return True
+    # Do not stop on a mapped v2 body. Newest-first Datadog pages often
+    # contain OrderCreate_v2_0 before the older AsyncOrderCreate starter
+    # that already has warrantyInfo / shipToInfo. Stopping here dropped
+    # those fields from the generated curl.
     return False
 
 

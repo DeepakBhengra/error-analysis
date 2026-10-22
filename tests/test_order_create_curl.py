@@ -14,6 +14,7 @@ from error_analysis.order_create.curl_builder import (
     build_order_create_headers,
     find_order_create_records,
     resolve_order_create_url,
+    should_stop_order_create_fetch,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -548,3 +549,82 @@ def test_prod_sync_v6_uses_v6_metadata_headers_fallback():
     assert built.headers["IM-CustomerNumber"] == "70-839222"
     assert built.headers["IM-CorrelationID"] == "corr-sync"
     assert built.url == UAT_ORDERS_URL
+
+
+def _sample_qa_async_v6(*, order_number: str = "1783460XIPDate03") -> dict:
+    return {
+        "service": "AsyncOrderCreate",
+        "host": "uschleai2402",
+        "request": {
+            "customerOrderNumber": order_number,
+            "resellerInfo": {"resellerId": "44-459998", "countryCode": "DE"},
+            "shipToInfo": {
+                "contact": "Dr. Anna Schmidt",
+                "companyName": "HelixNova Biotechnologie GmbH",
+                "addressLine1": "Berlin Biotech Campus",
+                "city": "Berlin",
+                "countryCode": "DE",
+            },
+            "lines": [
+                {
+                    "customerLineNumber": "001",
+                    "ingramPartNumber": "CI11648",
+                    "quantity": 1,
+                    "warrantyInfo": {
+                        "serialInfo": [
+                            {
+                                "shipDate": "11/11/26",
+                                "primarySerialNumber": "SN-DUMMY01",
+                            }
+                        ]
+                    },
+                }
+            ],
+        },
+    }
+
+
+def test_find_prefers_qa_async_body_over_mapped_v2():
+    records = [
+        _sample_v2(host="uschleai2403", country="DE", customer="44-459998"),
+        _sample_qa_async_v6(),
+    ]
+    matches = find_order_create_records(records)
+    assert len(matches) == 1
+    assert matches[0]["service"] == "AsyncOrderCreate"
+    assert matches[0]["host"] == "uschleai2402"
+
+
+def test_qa_async_builds_curl_with_warranty_info():
+    records = [
+        _sample_v2(host="uschleai2403", country="DE", customer="44-459998"),
+        _sample_qa_async_v6(),
+    ]
+    built = build_order_create_curl_from_records(
+        records,
+        username="u",
+        password="p",
+        target="qa",
+    )
+    assert built.source == "v6"
+    assert built.url == QA_ORDERS_URL
+    assert built.body["customerOrderNumber"] == "1783460XIPDate03"
+    assert built.body["lines"][0]["warrantyInfo"]["serialInfo"][0][
+        "primarySerialNumber"
+    ] == "SN-DUMMY01"
+    assert built.body["shipToInfo"]["companyName"] == "HelixNova Biotechnologie GmbH"
+    assert "SN-DUMMY01" in built.curl
+    assert "warrantyInfo" in built.curl
+
+
+def test_should_not_stop_fetch_on_mapped_v2_before_async_body():
+    """Newest-first pages hit OrderCreate_v2_0 first; keep scanning for Async."""
+    v2_only = [_sample_v2(host="uschleai2403")]
+    assert (
+        should_stop_order_create_fetch(v2_only, 0, last_page=False) is False
+    )
+    with_async = [
+        _sample_v2(host="uschleai2403"),
+        _sample_qa_async_v6(),
+    ]
+    assert should_stop_order_create_fetch(with_async, 0, last_page=False) is True
