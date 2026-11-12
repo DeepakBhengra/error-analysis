@@ -1,4 +1,4 @@
-from pydantic import Field, model_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from error_analysis.env_file import env_file_path
@@ -80,11 +80,15 @@ class Settings(BaseSettings):
         alias="LOOKUP_CORORA_MAPPINGS",
     )
 
-    @model_validator(mode="after")
-    def require_datadog_credentials(self) -> "Settings":
+    @property
+    def has_datadog_credentials(self) -> bool:
         if self.dd_access_token.strip():
-            return self
-        if self.dd_api_key.strip() and self.dd_app_key.strip():
+            return True
+        return bool(self.dd_api_key.strip() and self.dd_app_key.strip())
+
+    def require_datadog_credentials(self) -> "Settings":
+        """Raise when Datadog search/replay would have no usable auth."""
+        if self.has_datadog_credentials:
             return self
         raise ValueError(
             "Datadog auth required: set DD_ACCESS_TOKEN (Personal/Service Access Token), "

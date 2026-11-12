@@ -39,6 +39,7 @@ class DatadogClient:
     MAX_RETRIES = 3
 
     def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
+        settings.require_datadog_credentials()
         self.settings = settings
         self._client = client or httpx.Client(
             base_url=settings.api_base_url,

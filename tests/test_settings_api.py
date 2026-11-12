@@ -84,6 +84,44 @@ def test_put_settings_updates_defaults_and_env(settings_env):
     assert "DD_API_KEY=new-api-key" in text
 
 
+def test_get_settings_works_without_datadog_credentials(monkeypatch, tmp_path: Path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("DD_SITE=us5.datadoghq.com\n", encoding="utf-8")
+    monkeypatch.setattr("error_analysis.env_file.ENV_PATH", env_path)
+    for key in ("DD_API_KEY", "DD_APP_KEY", "DD_ACCESS_TOKEN"):
+        monkeypatch.delenv(key, raising=False)
+
+    from error_analysis.api import app
+
+    client = TestClient(app)
+    res = client.get("/api/settings")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["dd_access_token_configured"] is False
+    assert data["dd_api_key_configured"] is False
+    assert data["dd_app_key_configured"] is False
+    assert data["dd_site"] == "us5.datadoghq.com"
+
+
+def test_put_settings_saves_access_token_when_env_empty(monkeypatch, tmp_path: Path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("DD_SITE=us5.datadoghq.com\nDD_ACCESS_TOKEN=\n", encoding="utf-8")
+    monkeypatch.setattr("error_analysis.env_file.ENV_PATH", env_path)
+    for key in ("DD_API_KEY", "DD_APP_KEY", "DD_ACCESS_TOKEN"):
+        monkeypatch.delenv(key, raising=False)
+
+    from error_analysis.api import app
+
+    client = TestClient(app)
+    res = client.put("/api/settings", json={"dd_access_token": "ddpat_from_settings_ui"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["dd_access_token"] == ""
+    assert data["dd_access_token_configured"] is True
+    assert data["dd_auth_mode"] == "access_token"
+    assert "DD_ACCESS_TOKEN=ddpat_from_settings_ui" in env_path.read_text(encoding="utf-8")
+
+
 def test_put_settings_persists_access_token(settings_env):
     from error_analysis.api import app
 
