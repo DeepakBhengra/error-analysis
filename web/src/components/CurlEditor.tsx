@@ -10,8 +10,10 @@ interface CurlEditorProps {
   onTabChange: (tab: CurlPanelTab) => void
   showCreateTab: boolean
   showModifyTab: boolean
+  showXmlTab: boolean
   createCurl: string
   modifyCurl: string
+  xmlRequest: string
   loading: boolean
   canCancel?: boolean
   httpResponse?: CurlHttpResponse | null
@@ -21,6 +23,7 @@ interface CurlEditorProps {
   lineRecords?: OrrorhRecord[]
   onCreateChange: (value: string) => void
   onModifyChange: (value: string) => void
+  onXmlChange: (value: string) => void
   onResubmit: () => void
   onCancel?: () => void
 }
@@ -95,8 +98,10 @@ export function CurlEditor({
   onTabChange,
   showCreateTab,
   showModifyTab,
+  showXmlTab,
   createCurl,
   modifyCurl,
+  xmlRequest,
   loading,
   canCancel = false,
   httpResponse = null,
@@ -106,13 +111,16 @@ export function CurlEditor({
   lineRecords = [],
   onCreateChange,
   onModifyChange,
+  onXmlChange,
   onResubmit,
   onCancel,
 }: CurlEditorProps) {
   const [conditionField, setConditionField] = useState<OrrorhField | null>(null)
   const [substationTab, setSubstationTab] = useState<'header' | 'comments' | 'lines'>('header')
-  const curl = activeTab === 'modify' ? modifyCurl : createCurl
-  const onChange = activeTab === 'modify' ? onModifyChange : onCreateChange
+  const editorValue =
+    activeTab === 'modify' ? modifyCurl : activeTab === 'xml' ? xmlRequest : createCurl
+  const onChange =
+    activeTab === 'modify' ? onModifyChange : activeTab === 'xml' ? onXmlChange : onCreateChange
 
   const responseText =
     httpResponse && httpResponse.httpBody !== undefined && httpResponse.httpBody !== null
@@ -128,7 +136,12 @@ export function CurlEditor({
     [substationFields, substationLogs],
   )
 
-  const panelTitle = activeTab === 'modify' ? 'Order Modify Curl' : 'Order Create Curl'
+  const panelTitle =
+    activeTab === 'modify'
+      ? 'Order Modify Curl'
+      : activeTab === 'xml'
+        ? 'XML Request'
+        : 'Order Create Curl'
 
   return (
     <section className="curl-panel page-card">
@@ -151,6 +164,15 @@ export function CurlEditor({
             Order Modify curl
           </button>
         ) : null}
+        {showXmlTab ? (
+          <button
+            type="button"
+            className={`detail-tab${activeTab === 'xml' ? ' active' : ''}`}
+            onClick={() => onTabChange('xml')}
+          >
+            XML request
+          </button>
+        ) : null}
       </div>
       <div className="detail-section-header">
         <div className="detail-section-title-wrap">
@@ -161,18 +183,22 @@ export function CurlEditor({
           </span>
           <div>
             <h2 className="detail-section-title">{panelTitle}</h2>
-            <p className="detail-section-meta">Request curl editor</p>
+            <p className="detail-section-meta">
+              {activeTab === 'xml' ? 'SOAP request viewer' : 'Request curl editor'}
+            </p>
           </div>
         </div>
         <div className="curl-panel-actions">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={onResubmit}
-            disabled={loading || !curl.trim()}
-          >
-            Re-Submit
-          </button>
+          {activeTab === 'xml' ? null : (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={onResubmit}
+              disabled={loading || !editorValue.trim()}
+            >
+              Re-Submit
+            </button>
+          )}
           {canCancel ? (
             <button type="button" className="btn-outline-cancel" onClick={onCancel}>
               Cancel
@@ -183,7 +209,9 @@ export function CurlEditor({
       <p className="curl-hint">
         {activeTab === 'modify'
           ? 'RUN prepares a PUT Order Modify curl from Datadog RequestPayload without posting. Edit below, then Re-Submit.'
-          : 'RUN prepares a v6 Order Create curl (converting from v2 when needed) without posting. Edit below, then Re-Submit. One-up increments the customerOrderNumber currently in this curl; Random replaces it. Both stay at most 18 characters and also update endCustomerOrderNumber.'}
+          : activeTab === 'xml'
+            ? 'RUN loads the Order Create SOAP XML from Datadog service APPPCG-Identity where the URL is /Processes/OrderCreate/OrderCreate_v1_0. Header credentials are masked. This tab does not POST.'
+            : 'RUN prepares a v6 Order Create curl (converting from v2 when needed) without posting. Edit below, then Re-Submit. One-up increments the customerOrderNumber currently in this curl; Random replaces it. Both stay at most 18 characters and also update endCustomerOrderNumber.'}
       </p>
       {orderTypeHint ? (
         <div
@@ -218,20 +246,25 @@ export function CurlEditor({
       <div className="copyable-panel">
         <textarea
           className="curl-textarea"
-          value={curl}
+          value={editorValue}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
           disabled={loading}
           placeholder={
             activeTab === 'modify'
               ? 'Order Modify curl will appear here after RUN…'
-              : 'Curl will appear here after RUN prepares a v6 request…'
+              : activeTab === 'xml'
+                ? 'Order Create SOAP XML will appear here after RUN…'
+                : 'Curl will appear here after RUN prepares a v6 request…'
           }
           rows={16}
         />
-        <CopyButton text={curl} label="Copy curl" />
+        <CopyButton
+          text={editorValue}
+          label={activeTab === 'xml' ? 'Copy XML request' : 'Copy curl'}
+        />
       </div>
-      {httpResponse ? (
+      {httpResponse && activeTab !== 'xml' ? (
         <div className="curl-response-panel">
           <div className="curl-response-header">
             <h3>Postman / API Response</h3>

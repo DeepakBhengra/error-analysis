@@ -20,7 +20,13 @@ from error_analysis.datadog.errors import DatadogError
 from error_analysis.datadog.fetch_request import (
     fetch_modify_request_records,
     fetch_request_records,
+    fetch_xml_request_records,
     resolve_service_filter,
+)
+from error_analysis.extractors.order_create_xml import (
+    XML_ORDER_CREATE_PATH,
+    XML_ORDER_CREATE_SERVICE,
+    extract_customer_order_number,
 )
 from error_analysis.env_file import upsert_env_values
 from error_analysis.logging_config import get_logger, setup_logging
@@ -168,6 +174,18 @@ class OrderRequestPreview(BaseModel):
     index: int = 0
     env: str | None = None
     target: Target = "uat"
+
+    model_config = {"populate_by_name": True}
+
+
+class OrderXmlRequestPreview(BaseModel):
+    """Fetch Order Create SOAP XML from APPPCG-Identity logs."""
+
+    text: str = Field(..., min_length=1)
+    from_time: str | None = Field(default=None, alias="from")
+    to_time: str | None = Field(default=None, alias="to")
+    index: int = 0
+    env: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -748,6 +766,79 @@ def _modify_preview_message(built: OrderModifyCurl, *, text: str) -> str:
         f"(order id {built.order_id}, target {built.target}). "
         "Edit the curl, then Re-Submit."
     )
+
+
+@app.post("/api/order-xml-request")
+def order_xml_request_preview(payload: OrderXmlRequestPreview) -> dict[str, Any]:
+    """Search Datadog APPPCG-Identity logs and return the Order Create SOAP XML."""
+    settings = _load_settings()
+    text = payload.text.strip()
+    search_from = payload.from_time
+    search_to = payload.to_time
+    if not search_from or not search_to:
+        search_from, search_to = default_search_window(30)
+
+    try:
+        with DatadogClient(settings) as client:
+            fetched = fetch_xml_request_records(
+                client,
+                settings,
+                from_time=search_from,
+                to_time=search_to,
+                text=text,
+                env=payload.env,
+                early_stop_index=payload.index,
+            )
+    except ValueError as exc:
+        logger.warning("order-xml-request invalid input: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DatadogError as exc:
+        logger.error("order-xml-request Datadog fetch failed for %r: %s", text, exc)
+        raise HTTPException(
+            status_code=502, detail=f"Datadog fetch failed: {exc}"
+        ) from exc
+
+    if not fetched.records:
+        logger.warning(
+            "order-xml-request found no records for %r (query=%s)", text, fetched.query
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No XML Order Create request found for {text!r} "
+                f"(service:{XML_ORDER_CREATE_SERVICE} {XML_ORDER_CREATE_PATH}). "
+                f"Query used: {fetched.query}"
+            ),
+        )
+
+    index = payload.index if payload.index >= 0 else 0
+    if index >= len(fetched.records):
+        index = 0
+    record = fetched.records[index]
+    xml = record.get("request")
+    if not isinstance(xml, str) or not xml.strip():
+        raise HTTPException(
+            status_code=404,
+            detail=f"XML Order Create request payload was empty for {text!r}.",
+        )
+
+    order_number = extract_customer_order_number(xml)
+    url = str(record.get("url") or "")
+    return {
+        "outcome": "READY",
+        "message": (
+            f"XML Order Create request ready for {order_number or text!r} "
+            f"(service {XML_ORDER_CREATE_SERVICE}, {XML_ORDER_CREATE_PATH})."
+        ),
+        "xml": xml,
+        "customerOrderNumber": order_number,
+        "originalCustomerOrderNumber": order_number,
+        "sourceSearchText": text,
+        "url": url,
+        "query": fetched.query,
+        "recordCount": len(fetched.records),
+        "service": XML_ORDER_CREATE_SERVICE,
+    }
 
 
 @app.post("/api/order-modify-request")

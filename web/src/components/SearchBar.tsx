@@ -22,6 +22,7 @@ interface SearchBarProps {
 const CURL_TYPE_OPTIONS: { value: CurlType; label: string }[] = [
   { value: 'create', label: 'Order Create curl' },
   { value: 'modify', label: 'Order Modify curl' },
+  { value: 'xml', label: 'XML request' },
 ]
 
 export function SearchBar({
