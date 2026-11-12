@@ -4,6 +4,7 @@ import type {
   ErrorLookupResponse,
   OrderRequestPreviewResponse,
   OrderModifyPreviewResponse,
+  OrderXmlPreviewResponse,
   ReplayApiResponse,
   ReplayMode,
   OrderCreateTarget,
@@ -32,9 +33,16 @@ export function isMissingCurlResultError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return false
   if (err.status === 404) return true
   if (err.status !== 400) return false
-  return /no order (create|modify)|requestpayload body found|body record found|not found for/i.test(
+  return /no order (create|modify)|no xml order create|requestpayload body found|body record found|not found for/i.test(
     err.message,
   )
+}
+
+/** True when a sibling preview type can still run (missing records or unused auth). */
+export function isSkippablePreviewError(err: unknown): boolean {
+  if (isMissingCurlResultError(err)) return true
+  if (!(err instanceof ApiError) || err.status !== 400) return false
+  return /username is required/i.test(err.message)
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -79,6 +87,26 @@ export async function fetchOrderRequest(params: {
   })
   if (!res.ok) throw new ApiError(res.status, await parseError(res))
   return res.json() as Promise<OrderRequestPreviewResponse>
+}
+
+export async function fetchOrderXmlRequest(params: {
+  text: string
+  from?: string
+  to?: string
+  signal?: AbortSignal
+}): Promise<OrderXmlPreviewResponse> {
+  const res = await fetch('/api/order-xml-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: params.text,
+      from: params.from,
+      to: params.to,
+    }),
+    signal: params.signal,
+  })
+  if (!res.ok) throw new ApiError(res.status, await parseError(res))
+  return res.json() as Promise<OrderXmlPreviewResponse>
 }
 
 export async function fetchOrderModifyRequest(params: {

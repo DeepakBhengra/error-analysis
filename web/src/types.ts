@@ -19,11 +19,11 @@ export interface OrrorhRecord {
 export type ReplayMode = 'one_up' | 'random'
 export type OrderCreateTarget = 'uat' | 'qa'
 export type OrderModifyTarget = 'test' | 'qa1'
-export type CurlType = 'create' | 'modify'
+export type CurlType = 'create' | 'modify' | 'xml'
 export type Outcome = 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'UNKNOWN' | 'READY'
 export type TabFilter = 'all' | 'success' | 'failed'
 export type OrderRequestSource = 'v6' | 'v2-converted'
-export type CurlPanelTab = 'create' | 'modify'
+export type CurlPanelTab = 'create' | 'modify' | 'xml'
 
 export interface ReplayApiResponse {
   outcome: Outcome
@@ -74,6 +74,19 @@ export interface OrderRequestPreviewResponse {
   orrorhFields?: OrrorhField[]
   orrorcRecords?: OrrorhRecord[]
   orrorlRecords?: OrrorhRecord[]
+}
+
+export interface OrderXmlPreviewResponse {
+  outcome: 'READY'
+  message: string
+  xml: string
+  customerOrderNumber: string
+  originalCustomerOrderNumber: string
+  sourceSearchText?: string | null
+  url: string
+  query?: string
+  recordCount?: number
+  service?: string
 }
 
 export interface OrderModifyPreviewResponse {

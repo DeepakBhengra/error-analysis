@@ -1,0 +1,21 @@
+{
+  "id": "xml-log-1",
+  "type": "log",
+  "attributes": {
+    "service": "APPPCG-Identity",
+    "status": "info",
+    "timestamp": "2026-11-12T14:41:16.732Z",
+    "message": "<?xml version=\"1.0\"?><SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"><SOAP-ENV:Body><ns0:serviceResponse/></SOAP-ENV:Envelope>",
+    "attributes": {
+      "organization": "ingrammicro",
+      "soapaction": "/Processes/OrderCreate",
+      "http": {
+        "url": "https://10.22.102.85:22037/Processes/OrderCreate/OrderCreate_v1_0",
+        "url_details": {
+          "path": "/Processes/OrderCreate/OrderCreate_v1_0"
+        }
+      },
+      "request": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ocreq1=\"http://www.ingrammicro.com/order/OrderCreateRequest_v1_0/types\"><soapenv:Header><ns0:serviceRequestHeader xmlns:ns0=\"http://www.ingrammicro.com/common/ServiceRequestHeader_v1_0/types\"><applicationCredential><ID>APPPCG</ID><credential>super-secret</credential></applicationCredential></ns0:serviceRequestHeader></soapenv:Header><soapenv:Body><ocreq1:serviceRequest><orderCreateRequest><customerOrderNumber>DEEPAKWARRANTY1234</customerOrderNumber></orderCreateRequest></ocreq1:serviceRequest></soapenv:Body></soapenv:Envelope>"
+    }
+  }
+}

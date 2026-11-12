@@ -4,9 +4,10 @@ import {
   defaultSearchWindow,
   fetchOrderModifyRequest,
   fetchOrderRequest,
+  fetchOrderXmlRequest,
   fetchSettings,
   isAbortError,
-  isMissingCurlResultError,
+  isSkippablePreviewError,
   lookupErrorCode,
   resolveErrorCode,
   resubmitCurl,
@@ -59,6 +60,7 @@ export default function App() {
   const [results, setResults] = useState<SessionResult[]>([])
   const [createCurl, setCreateCurl] = useState('')
   const [modifyCurl, setModifyCurl] = useState('')
+  const [xmlRequest, setXmlRequest] = useState('')
   const [httpResponse, setHttpResponse] = useState<CurlHttpResponse | null>(null)
   const [substationLogs, setSubstationLogs] = useState('')
   const [substationFields, setSubstationFields] = useState<OrrorhField[]>([])
@@ -163,8 +165,10 @@ export default function App() {
 
     const wantsCreate = curlTypes.includes('create')
     const wantsModify = curlTypes.includes('modify')
+    const wantsXml = curlTypes.includes('xml')
     if (!wantsCreate) setCreateCurl('')
     if (!wantsModify) setModifyCurl('')
+    if (!wantsXml) setXmlRequest('')
 
     try {
       const searchParams = {
@@ -178,6 +182,7 @@ export default function App() {
       const skipped: string[] = []
       let createFound = false
       let modifyFound = false
+      let xmlFound = false
 
       if (wantsCreate) {
         try {
@@ -192,7 +197,7 @@ export default function App() {
           createFound = Boolean(data.curl?.trim())
         } catch (err) {
           if (isAbortError(err)) throw err
-          if (wantsModify && isMissingCurlResultError(err)) {
+          if ((wantsModify || wantsXml) && isSkippablePreviewError(err)) {
             setCreateCurl('')
             setSubstationLogs('')
             setSubstationFields([])
@@ -219,7 +224,7 @@ export default function App() {
           }
         } catch (err) {
           if (isAbortError(err)) throw err
-          if (wantsCreate && isMissingCurlResultError(err)) {
+          if ((wantsCreate || wantsXml) && isSkippablePreviewError(err)) {
             setModifyCurl('')
             skipped.push(`Order Modify curl: ${err instanceof ApiError ? err.message : String(err)}`)
           } else {
@@ -228,19 +233,41 @@ export default function App() {
         }
       }
 
-      const hasAnyResult = createFound || modifyFound
+      if (wantsXml) {
+        try {
+          const data = await fetchOrderXmlRequest(searchParams)
+          setXmlRequest(data.xml || '')
+          messages.push(data.message)
+          xmlFound = Boolean(data.xml?.trim())
+          if (!wantsCreate && !wantsModify) {
+            setPreviewSource(null)
+          }
+        } catch (err) {
+          if (isAbortError(err)) throw err
+          if ((wantsCreate || wantsModify) && isSkippablePreviewError(err)) {
+            setXmlRequest('')
+            skipped.push(`XML request: ${err instanceof ApiError ? err.message : String(err)}`)
+          } else {
+            throw err
+          }
+        }
+      }
+
+      const hasAnyResult = createFound || modifyFound || xmlFound
       if (!hasAnyResult) {
         const detail = [...skipped, ...messages].filter(Boolean).join(' ')
         throw new ApiError(
           404,
-          detail || 'No Order Create or Order Modify curl records found for this search.',
+          detail || 'No Order Create, Order Modify, or XML request records found for this search.',
         )
       }
 
-      if (modifyFound && !createFound) {
-        setCurlPanelTab('modify')
-      } else if (createFound) {
+      if (createFound) {
         setCurlPanelTab('create')
+      } else if (modifyFound) {
+        setCurlPanelTab('modify')
+      } else {
+        setCurlPanelTab('xml')
       }
 
       const bannerParts = [...messages, ...skipped]
@@ -254,6 +281,7 @@ export default function App() {
         setBannerMessage('Cancelled.')
         setCreateCurl('')
         setModifyCurl('')
+        setXmlRequest('')
         setHttpResponse(null)
         setPreviewSource(null)
       } else {
@@ -266,6 +294,7 @@ export default function App() {
         setBannerMessage('')
         setCreateCurl('')
         setModifyCurl('')
+        setXmlRequest('')
         setHttpResponse(null)
         setPreviewSource(null)
       }
@@ -277,6 +306,7 @@ export default function App() {
   }
 
   const handleResubmit = async () => {
+    if (curlPanelTab === 'xml') return
     const activeCurl = curlPanelTab === 'modify' ? modifyCurl : createCurl
     if (!activeCurl.trim() || loading) return
     const controller = beginRequest()
@@ -323,6 +353,7 @@ export default function App() {
     setResults([])
     setCreateCurl('')
     setModifyCurl('')
+    setXmlRequest('')
     setHttpResponse(null)
     setSubstationLogs('')
     setSubstationFields([])
@@ -410,7 +441,7 @@ export default function App() {
         <div className="order-replay-page">
           <PageHeader
             badge="ORDER RE-BUILD"
-            subtitle="Search Datadog checkout logs, prepare Order Create and Order Modify curls, and replay requests."
+            subtitle="Search Datadog checkout logs, prepare Order Create curl, Order Modify curl, and XML request, and replay requests."
           />
           <MetricCards
             runs={results.length}
@@ -469,8 +500,10 @@ export default function App() {
             onTabChange={setCurlPanelTab}
             showCreateTab={curlTypes.includes('create')}
             showModifyTab={curlTypes.includes('modify')}
+            showXmlTab={curlTypes.includes('xml')}
             createCurl={createCurl}
             modifyCurl={modifyCurl}
+            xmlRequest={xmlRequest}
             loading={loading}
             canCancel={loadingKind === 'submit'}
             httpResponse={httpResponse}
@@ -480,6 +513,7 @@ export default function App() {
             lineRecords={lineRecords}
             onCreateChange={setCreateCurl}
             onModifyChange={setModifyCurl}
+            onXmlChange={setXmlRequest}
             onResubmit={handleResubmit}
             onCancel={handleCancel}
           />

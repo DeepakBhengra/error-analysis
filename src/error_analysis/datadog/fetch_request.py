@@ -13,6 +13,12 @@ from error_analysis.extractors.hermes_request import (
     extract_log_payloads,
 )
 from error_analysis.extractors.modify_request import extract_modify_request
+from error_analysis.extractors.order_create_xml import (
+    XML_ORDER_CREATE_SERVICE,
+    extract_http_url,
+    extract_order_create_xml,
+    is_order_create_xml_event,
+)
 from error_analysis.extractors.request_log_payload import extract_correlation_id
 from error_analysis.order_create.curl_builder import should_stop_order_create_fetch
 from error_analysis.order_modify.modify_curl_builder import should_stop_order_modify_fetch
@@ -206,4 +212,80 @@ def fetch_modify_request_records(
         missing_payload=missing_payload,
         request_count=request_count,
         response_count=response_count,
+    )
+
+
+def fetch_xml_request_records(
+    client: DatadogClient,
+    settings: Settings,
+    *,
+    from_time: str,
+    to_time: str,
+    text: str | None = None,
+    correlation_id: str | None = None,
+    job_id: str | None = None,
+    customer_po: str | None = None,
+    env: str | None = None,
+    limit: int | None = None,
+    early_stop_index: int | None = 0,
+) -> FetchRequestResult:
+    """Search APPPCG-Identity logs and extract Order Create SOAP XML requests."""
+    query = build_checkout_query(
+        search_text=text,
+        correlation_id=correlation_id,
+        job_id=job_id,
+        customer_po=customer_po,
+        env=env,
+        service=XML_ORDER_CREATE_SERVICE,
+    )
+    params = LogSearchParams(
+        filter=LogSearchFilter(
+            query=query,
+            **{"from": from_time, "to": to_time},
+            storage_tier=settings.default_storage_tier,
+        ),
+        sort=settings.default_sort,
+        page_limit=limit or settings.default_page_limit,
+    )
+
+    results: list[dict[str, Any]] = []
+    missing_payload = 0
+    total_logs = 0
+    request_count = 0
+
+    def _should_stop(_last_page: bool) -> bool:
+        if early_stop_index is None:
+            return False
+        return len(results) > early_stop_index
+
+    for event in search_logs(client, params, should_stop=_should_stop):
+        total_logs += 1
+        if not is_order_create_xml_event(event):
+            missing_payload += 1
+            continue
+        xml = extract_order_create_xml(event)
+        if not xml:
+            missing_payload += 1
+            continue
+        request_count += 1
+        record = build_fetch_request_record(
+            event,
+            request=xml,
+            response=None,
+            search_text=text,
+            correlation_id=correlation_id or extract_correlation_id(event),
+            job_id=job_id,
+            customer_po=customer_po,
+            env=env or "",
+        )
+        record["url"] = extract_http_url(event)
+        results.append(record)
+
+    return FetchRequestResult(
+        records=results,
+        query=query,
+        total_logs=total_logs,
+        missing_payload=missing_payload,
+        request_count=request_count,
+        response_count=0,
     )
