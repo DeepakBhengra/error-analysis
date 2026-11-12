@@ -20,6 +20,12 @@ def settings() -> Settings:
     )
 
 
+def test_client_requires_datadog_credentials():
+    settings = Settings(DD_SITE="us5.datadoghq.com")
+    with pytest.raises(ValueError, match="DD_ACCESS_TOKEN"):
+        DatadogClient(settings)
+
+
 def test_validate_credentials_success(httpx_mock, settings: Settings):
     httpx_mock.add_response(json={"valid": True})
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
 
 from error_analysis.config import Settings
 
@@ -23,6 +22,9 @@ def test_settings_accept_api_and_app_keys():
     assert settings.uses_access_token is False
 
 
-def test_settings_reject_missing_datadog_auth():
-    with pytest.raises(ValidationError, match="DD_ACCESS_TOKEN"):
-        Settings(DD_SITE="us5.datadoghq.com")
+def test_settings_allow_missing_datadog_auth_for_settings_ui():
+    settings = Settings(DD_SITE="us5.datadoghq.com")
+    assert settings.has_datadog_credentials is False
+    assert settings.uses_access_token is False
+    with pytest.raises(ValueError, match="DD_ACCESS_TOKEN"):
+        settings.require_datadog_credentials()

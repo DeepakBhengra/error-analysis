@@ -61,7 +61,7 @@ def _cli_main(
 
 def _load_settings() -> Settings:
     try:
-        return get_settings()
+        return get_settings().require_datadog_credentials()
     except Exception as exc:
         logger.exception("Configuration error while loading settings")
         typer.secho(
