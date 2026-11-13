@@ -27,7 +27,8 @@ def _xml_record() -> dict[str, Any]:
         "service": "APPPCG-Identity",
         "url": "https://10.22.102.85:22037/Processes/OrderCreate/OrderCreate_v1_0",
         "request": (
-            "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\">"
+            "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\""
+            " xmlns:ocreq1=\"http://www.ingrammicro.com/order/OrderCreateRequest_v1_0/types\">"
             "<soapenv:Body><ocreq1:serviceRequest>"
             "<orderCreateRequest>"
             "<customerOrderNumber>DEEPAKWARRANTY1234</customerOrderNumber>"
@@ -82,6 +83,12 @@ def test_order_xml_request_preview_returns_soap(xml_settings, monkeypatch):
     assert data["outcome"] == "READY"
     assert data["customerOrderNumber"] == "DEEPAKWARRANTY1234"
     assert "<orderCreateRequest>" in data["xml"]
+    assert "\n      <orderCreateRequest>\n" in data["xml"]
+    assert (
+        "        <customerOrderNumber>DEEPAKWARRANTY1234</customerOrderNumber>"
+        in data["xml"]
+    )
+    assert data["xml"].count("\n") >= 6
     assert data["service"] == "APPPCG-Identity"
     assert data["url"].endswith("/Processes/OrderCreate/OrderCreate_v1_0")
 

@@ -27,6 +27,63 @@ def redact_xml_credentials(xml: str) -> str:
     return _CREDENTIAL_RE.sub(r"\1***\3", xml)
 
 
+_TAG_SPLIT_RE = re.compile(r"(<[^>]+>)")
+
+
+def format_order_create_xml(xml: str, *, indent: str = "  ") -> str:
+    """Pretty-print SOAP XML for the XML request tab.
+
+    Uses tag tokens so namespace prefixes and leaf text stay intact. Empty or
+    unparseable input is returned unchanged.
+    """
+    text = xml.strip()
+    if not text or "<" not in text:
+        return xml
+    compact = re.sub(r">\s+<", "><", text)
+    tokens = [part for part in _TAG_SPLIT_RE.split(compact) if part != ""]
+    depth = 0
+    lines: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        pad = indent * depth
+        if token.startswith("</"):
+            depth = max(depth - 1, 0)
+            pad = indent * depth
+            lines.append(f"{pad}{token}")
+            index += 1
+            continue
+        if token.startswith("<?") or token.startswith("<!"):
+            lines.append(f"{pad}{token}")
+            index += 1
+            continue
+        if token.startswith("<") and token.endswith("/>"):
+            lines.append(f"{pad}{token}")
+            index += 1
+            continue
+        if token.startswith("<"):
+            nxt = tokens[index + 1] if index + 1 < len(tokens) else ""
+            nxt2 = tokens[index + 2] if index + 2 < len(tokens) else ""
+            if nxt.startswith("</"):
+                lines.append(f"{pad}{token}{nxt}")
+                index += 2
+                continue
+            if not nxt.startswith("<") and nxt2.startswith("</"):
+                lines.append(f"{pad}{token}{nxt}{nxt2}")
+                index += 3
+                continue
+            lines.append(f"{pad}{token}")
+            depth += 1
+            index += 1
+            continue
+        stripped = token.strip()
+        if stripped:
+            lines.append(f"{pad}{stripped}")
+        index += 1
+    formatted = "\n".join(lines)
+    return formatted + ("\n" if formatted else "")
+
+
 def extract_customer_order_number(xml: str) -> str:
     match = _CUSTOMER_ORDER_RE.search(xml)
     if not match:
@@ -100,5 +157,5 @@ def extract_order_create_xml(log_event: dict[str, Any]) -> str | None:
             continue
         request = container.get("request")
         if isinstance(request, str) and _looks_like_order_create_soap(request):
-            return redact_xml_credentials(request.strip())
+            return format_order_create_xml(redact_xml_credentials(request.strip()))
     return None

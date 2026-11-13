@@ -27,6 +27,7 @@ from error_analysis.extractors.order_create_xml import (
     XML_ORDER_CREATE_PATH,
     XML_ORDER_CREATE_SERVICE,
     extract_customer_order_number,
+    format_order_create_xml,
 )
 from error_analysis.env_file import upsert_env_values
 from error_analysis.logging_config import get_logger, setup_logging
@@ -822,6 +823,7 @@ def order_xml_request_preview(payload: OrderXmlRequestPreview) -> dict[str, Any]
             detail=f"XML Order Create request payload was empty for {text!r}.",
         )
 
+    xml = format_order_create_xml(xml)
     order_number = extract_customer_order_number(xml)
     url = str(record.get("url") or "")
     return {
