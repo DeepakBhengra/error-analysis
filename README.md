@@ -248,6 +248,8 @@ Opens http://127.0.0.1:8010 — leave the console window open; Ctrl+C to stop.
 
 Requires `.venv` with `pip install -r requirements.txt` (or `pip install -e ".[web]"`), Node.js for the build step, and a configured `.env`.
 
+**Server one-click (no venv):** double-click **`Start Error Analysis One-Click.bat`** (or run `.\start-one-click-npm.ps1`). It runs the same `npm install` / `npm run build` as `build-prod.ps1`, then starts system Python on `http://10.24.169.28:7009`. Node.js is required for the UI build; `.venv` is not created.
+
 ### Host on a server or another laptop (no Node.js, no venv)
 
 Numbered steps: [`HOSTING.md`](HOSTING.md). Build the zip on the **same OS** as the other computer.
