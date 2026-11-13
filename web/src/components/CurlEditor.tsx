@@ -245,10 +245,11 @@ export function CurlEditor({
       ) : null}
       <div className="copyable-panel">
         <textarea
-          className="curl-textarea"
+          className={`curl-textarea${activeTab === 'xml' ? ' curl-textarea-xml' : ''}`}
           value={editorValue}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
+          wrap={activeTab === 'xml' ? 'off' : 'soft'}
           disabled={loading}
           placeholder={
             activeTab === 'modify'
@@ -257,7 +258,7 @@ export function CurlEditor({
                 ? 'Order Create SOAP XML will appear here after RUN…'
                 : 'Curl will appear here after RUN prepares a v6 request…'
           }
-          rows={16}
+          rows={activeTab === 'xml' ? 24 : 16}
         />
         <CopyButton
           text={editorValue}

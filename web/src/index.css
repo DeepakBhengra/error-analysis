@@ -1295,6 +1295,13 @@ body {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
+.curl-textarea-xml {
+  min-height: 420px;
+  white-space: pre;
+  tab-size: 2;
+  overflow-x: auto;
+}
+
 .curl-response-panel {
   margin-top: 14px;
   border: 1px solid var(--border);

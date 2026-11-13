@@ -11,6 +11,7 @@ from error_analysis.extractors.order_create_xml import (
     extract_customer_order_number,
     extract_http_url,
     extract_order_create_xml,
+    format_order_create_xml,
     is_order_create_xml_event,
     redact_xml_credentials,
 )
@@ -32,6 +33,9 @@ def test_extracts_soap_request_and_redacts_credential():
     assert "super-secret" not in xml
     assert extract_customer_order_number(xml) == "DEEPAKWARRANTY1234"
     assert extract_http_url(event).endswith(XML_ORDER_CREATE_PATH)
+    assert "\n  <soapenv:Header>" in xml
+    assert "\n    <ocreq1:serviceRequest>" in xml
+    assert xml.count("\n") >= 8
 
 
 def test_ignores_logs_for_other_identity_urls():
@@ -50,6 +54,34 @@ def test_ignores_other_services():
     event = _event()
     event["attributes"]["service"] = "OrderCreate_v2_0"
     assert is_order_create_xml_event(event) is False
+
+
+def test_format_order_create_xml_indents_minified_soap():
+    compact = (
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">'
+        "<soapenv:Body><orderCreateRequest>"
+        "<customerOrderNumber>PO1</customerOrderNumber>"
+        "</orderCreateRequest></soapenv:Body></soapenv:Envelope>"
+    )
+    formatted = format_order_create_xml(compact)
+    assert formatted.startswith("<soapenv:Envelope")
+    assert "\n  <soapenv:Body>\n    <orderCreateRequest>" in formatted
+    assert "<customerOrderNumber>PO1</customerOrderNumber>" in formatted
+
+
+def test_format_order_create_xml_keeps_leaf_text_on_one_line():
+    compact = (
+        "<Envelope><Body><orderCreateRequest>"
+        "<customerOrderNumber>PO1</customerOrderNumber>"
+        "<shipToAddress/>"
+        "<emailAddress></emailAddress>"
+        "</orderCreateRequest></Body></Envelope>"
+    )
+    formatted = format_order_create_xml(compact)
+    assert "<customerOrderNumber>PO1</customerOrderNumber>" in formatted
+    assert "\n      <shipToAddress/>\n" in formatted
+    assert "<emailAddress></emailAddress>" in formatted
+    assert format_order_create_xml(formatted) == formatted
 
 
 def test_redact_is_idempotent():
